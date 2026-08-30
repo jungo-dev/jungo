@@ -1,0 +1,55 @@
+name: jungo-dev
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.app
+      target: dev
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../.env
+    volumes:
+      - ..:/app
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgresql:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-go_api_framework}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Enable with: make app-dev WITH=cache
+  redis:
+    image: redis:7-alpine
+    profiles: ["cache", "full"]
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # Enable with: make app-dev WITH=mail (for a local Telegram-alert stand-in / SMTP testing)
+  mailpit:
+    image: axllent/mailpit
+    profiles: ["mail", "full"]
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

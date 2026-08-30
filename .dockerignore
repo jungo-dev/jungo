@@ -1,0 +1,12 @@
+.git
+tmp/
+bin/
+logs/
+uploads/
+*.md
+.env
+.codegraph
+go.work.local
+go.work.local.sum
+/junkit
+.DS_Store

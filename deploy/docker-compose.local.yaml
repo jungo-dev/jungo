@@ -1,0 +1,6 @@
+services:
+  app:
+    environment:
+      - GOWORK=/app/go.work.local
+    volumes:
+      - ../../junkit:/app/junkit

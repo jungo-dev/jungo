@@ -1,0 +1,13 @@
+.env
+bin/
+tmp/
+go.work.local
+go.work.local.sum
+/junkit
+storage/logs/*.log
+storage/uploads/*
+!storage/uploads/.gitkeep
+*.test
+*.out
+.DS_Store
+.codegraph
