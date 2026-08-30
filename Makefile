@@ -1,9 +1,9 @@
-include .env
+-include .env
 export
 
-COMPOSE_DEV = docker compose -f deploy/docker-compose.dev.yaml
-COMPOSE_PROD = docker compose -f deploy/docker-compose.yaml
-MIGRATE_DSN = "postgres://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
+COMPOSE_DEV = docker compose -f deploy/docker-compose.dev.yaml --env-file .env
+COMPOSE_PROD = docker compose -f deploy/docker-compose.yaml --env-file .env
+MIGRATE_DSN = "postgres://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_HOST_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
 PROFILE = $(if $(WITH),--profile $(WITH),)
 
 # =============================================================================
@@ -25,6 +25,13 @@ help: ## Show this beautiful help menu (default)
 	@echo "$(CYAN) • Use 'make app-dev LOG=full' for full logs in dev mode.$(RESET)"
 
 .DEFAULT_GOAL := help
+
+# =============================================================================
+#  Setup Commands
+# =============================================================================
+.PHONY: app-init
+app-init: ## Interactively create .env (app name, db name/user/pass, ports) for a new clone
+	@bash deploy/app-init.sh
 
 # =============================================================================
 # Development

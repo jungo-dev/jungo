@@ -1,4 +1,4 @@
-name: jungo-dev
+name: ${APP_NAME:-jungo}-dev
 
 services:
   app:
@@ -7,7 +7,7 @@ services:
       dockerfile: deploy/Dockerfile.app
       target: dev
     ports:
-      - "8080:8080"
+      - "${API_SERVER_PORT:-8080}:${API_SERVER_PORT:-8080}"
     env_file:
       - ../.env
     volumes:
@@ -24,7 +24,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_NAME:-go_api_framework}
     ports:
-      - "5432:5432"
+      - "${DB_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
