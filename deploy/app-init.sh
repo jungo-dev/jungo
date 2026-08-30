@@ -5,12 +5,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
+	CYAN=$(tput setaf 6) GREEN=$(tput setaf 2) YELLOW=$(tput setaf 3) RED=$(tput setaf 1) BOLD=$(tput bold) RESET=$(tput sgr0)
+else
+	CYAN="" GREEN="" YELLOW="" RED="" BOLD="" RESET=""
+fi
+
 if [ -f .env ]; then
-	echo "Error: .env already exists. Remove or rename it first if you really want to re-run this." >&2
+	echo "${RED}Error: .env already exists. Remove or rename it first if you really want to re-run this.${RESET}" >&2
 	exit 1
 fi
 
-echo "== Jungo app setup =="
+echo "${CYAN}== Jungo app setup ==${RESET}"
 echo "Press Enter to accept the default shown in [brackets]."
 echo ""
 
@@ -52,11 +58,11 @@ prompt_port() {
 	while true; do
 		value=$(prompt "$question" "$default")
 		if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; then
-			echo "  -> Invalid port, must be a number between 1-65535." >&2
+			echo "${RED}  -> Invalid port, must be a number between 1-65535.${RESET}" >&2
 			continue
 		fi
 		if port_in_use "$value"; then
-			read -r -p "  -> Port $value looks already in use. Use it anyway? [y/N]: " confirm
+			read -r -p "${YELLOW}  -> Port $value looks already in use. Use it anyway? [y/N]: ${RESET}" confirm
 			case "$confirm" in
 				[yY]*) ;;
 				*) continue ;;
@@ -73,11 +79,11 @@ prompt_app_name() {
 		raw=$(prompt "$question" "$default")
 		normalized=$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^[-_]+//; s/[-_]+$//')
 		if [ -z "$normalized" ]; then
-			echo "  -> Invalid name, try again." >&2
+			echo "${RED}  -> Invalid name, try again.${RESET}" >&2
 			continue
 		fi
 		if [ "$normalized" != "$raw" ]; then
-			echo "  -> Normalized to: $normalized" >&2
+			echo "${YELLOW}  -> Normalized to: $normalized${RESET}" >&2
 		fi
 		echo "$normalized"
 		return
@@ -133,7 +139,7 @@ set_env "TRACER_DEBUG_VALUE" "$TRACER_DEBUG_VALUE"
 rm -f .env.bak
 
 echo ""
-echo "== .env created =="
+echo "${CYAN}== .env created ==${RESET}"
 echo "  APP_NAME=$APP_NAME"
 echo "  DB_NAME=$DB_NAME"
 echo "  DB_USER=$DB_USER"
@@ -144,15 +150,15 @@ echo "  TRACER_DEBUG_VALUE=$TRACER_DEBUG_VALUE"
 check_tool() {
 	local name="$1" install_cmd="$2"
 	if command -v "$name" >/dev/null 2>&1; then
-		echo "  [OK]      $name"
+		echo "${GREEN}  [OK]      $name${RESET}"
 	else
-		echo "  [MISSING] $name — install with: $install_cmd"
+		echo "${YELLOW}  [MISSING] $name${RESET} — install with: $install_cmd"
 	fi
 }
 
-echo "== CLI tools (needed for migrate-* / sqlc make targets) =="
+echo "${CYAN}== CLI tools (needed for migrate-* / sqlc make targets) ==${RESET}"
 check_tool "migrate" "go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest"
 check_tool "sqlc" "go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest"
 
 echo ""
-echo "Next: make app-dev"
+echo "${BOLD}Next: make app-dev${RESET}"

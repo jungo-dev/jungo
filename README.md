@@ -43,14 +43,15 @@ make app-dev-bg            # builds and starts App + PostgreSQL, detached
 make migrate-up            # applies internal/database/migrations
 ```
 
-The API is now listening on `http://localhost:8080` (or whatever `API_SERVER_PORT` you chose).
+The API is now listening on `http://localhost:<API_SERVER_PORT>` (`8080` unless you changed it in
+`make app-init`).
 
 ```bash
 # health check
-curl http://localhost:8080/health
+curl http://localhost:<API_SERVER_PORT>/health
 
 # create a user (replace <API_KEY> with the value app-init generated in your .env)
-curl -X POST http://localhost:8080/api/v1/users \
+curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/users \
   -H "Authorization: Bearer <API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"email":"jane@example.com","password":"Secret@12345","first_name":"Jane","last_name":"Doe"}'
@@ -87,7 +88,7 @@ the `tracer` package — see [6](#6-package-tour-junkit) for the package and [7]
 add your own spans to the timeline.
 
 ```bash
-curl "http://localhost:8080/api/v1/users/<uuid>?t_debug=<TRACER_DEBUG_VALUE>"
+curl "http://localhost:<API_SERVER_PORT>/api/v1/users/<uuid>?t_debug=<TRACER_DEBUG_VALUE>"
 ```
 
 Never enable this in production — set `TRACER_DEBUG_VALUE` empty to disable the dashboard

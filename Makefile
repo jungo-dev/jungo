@@ -6,6 +6,11 @@ COMPOSE_PROD = docker compose -f deploy/docker-compose.yaml --env-file .env
 MIGRATE_DSN = "postgres://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_HOST_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
 PROFILE = $(if $(WITH),--profile $(WITH),)
 
+CYAN := $(shell tput setaf 6 2>/dev/null)
+YELLOW := $(shell tput setaf 3 2>/dev/null)
+GREEN := $(shell tput setaf 2 2>/dev/null)
+RESET := $(shell tput sgr0 2>/dev/null)
+
 # =============================================================================
 #  Help Command
 # =============================================================================
