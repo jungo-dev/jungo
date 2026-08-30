@@ -161,4 +161,6 @@ check_tool "migrate" "go install -tags 'postgres' github.com/golang-migrate/migr
 check_tool "sqlc" "go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest"
 
 echo ""
-echo "${BOLD}Next: make app-dev${RESET}"
+echo "${BOLD}Next:${RESET}"
+echo "  make app-dev-bg   # builds and starts App + PostgreSQL, detached"
+echo "  make migrate-up   # applies internal/database/migrations"
