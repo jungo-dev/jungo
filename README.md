@@ -38,20 +38,20 @@ Docker.)
 `junkit` is a public module, so the Docker build fetches it straight from the Go module proxy
 
 ```bash
-cp .env.example .env      # defaults work out of the box
-make app-dev-bg           # builds and starts App + PostgreSQL, detached
-make migrate-up           # applies internal/database/migrations
+make app-init              # interactive: app name, db name/user/pass, ports — creates .env
+make app-dev-bg            # builds and starts App + PostgreSQL, detached
+make migrate-up            # applies internal/database/migrations
 ```
 
-The API is now listening on `http://localhost:8080`.
+The API is now listening on `http://localhost:8080` (or whatever `API_SERVER_PORT` you chose).
 
 ```bash
 # health check
 curl http://localhost:8080/health
 
-# create a user (API_KEY comes from .env, default: dev-secret-api-key)
+# create a user (replace <API_KEY> with the value app-init generated in your .env)
 curl -X POST http://localhost:8080/api/v1/users \
-  -H "Authorization: Bearer dev-secret-api-key" \
+  -H "Authorization: Bearer <API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"email":"jane@example.com","password":"Secret@12345","first_name":"Jane","last_name":"Doe"}'
 ```
@@ -60,6 +60,7 @@ Other useful commands (see `Makefile` for the full list, or run `make help`):
 
 | Command | What it does |
 |---|---|
+| `make app-init` | Interactively create `.env` for a fresh clone (app name, db, ports) |
 | `make app-dev` | Same as above, but attached (streams logs, Ctrl+C to stop) |
 | `make app-dev WITH=cache` | Also start Redis and enable the `cache` package |
 | `make app-dev WITH=full` | Start every optional service (Redis, Mailpit) |
@@ -77,15 +78,16 @@ pick up a `junkit` change, publish a new tag in that repo, bump the version in `
 
 ### Live debug dashboard
 
-Append `?t_debug=0604` (see `TRACER_DEBUG_KEY` / `TRACER_DEBUG_VALUE` in `.env`) to any request to
-get a pretty-printed debug dashboard instead of the normal JSON response: request/server info,
-every SQL statement executed (with bound parameters), its actual result rows, and a timeline
-(waterfall) view breaking the request down into `logic` / `external` / `db` spans with their
-percentage of total time. This is the `tracer` package — see [6](#6-package-tour-junkit) for the
-package and [7](#tracer) for how to add your own spans to the timeline.
+Append `?t_debug=<TRACER_DEBUG_VALUE>` (see `TRACER_DEBUG_KEY` / `TRACER_DEBUG_VALUE` in your
+`.env` — `app-init` randomizes this per clone) to any request to get a pretty-printed debug
+dashboard instead of the normal JSON response: request/server info, every SQL statement executed
+(with bound parameters), its actual result rows, and a timeline (waterfall) view breaking the
+request down into `logic` / `external` / `db` spans with their percentage of total time. This is
+the `tracer` package — see [6](#6-package-tour-junkit) for the package and [7](#tracer) for how to
+add your own spans to the timeline.
 
 ```bash
-curl "http://localhost:8080/api/v1/users/<uuid>?t_debug=0604"
+curl "http://localhost:8080/api/v1/users/<uuid>?t_debug=<TRACER_DEBUG_VALUE>"
 ```
 
 Never enable this in production — set `TRACER_DEBUG_VALUE` empty to disable the dashboard
@@ -571,6 +573,9 @@ dependency, no local checkout needed) holds every infrastructure package listed 
 - [`golang-migrate`](https://github.com/golang-migrate/migrate) CLI, only if running `make
   migrate-*` from your host instead of inside the container
 - [`sqlc`](https://sqlc.dev), only if regenerating `internal/database/sqlc` via `make sqlc`
+
+`make app-init` checks whether `migrate` and `sqlc` are on your `PATH` and tells you the install
+command if either is missing.
 
 ---
 
