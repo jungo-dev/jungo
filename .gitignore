@@ -6,6 +6,7 @@ go.work.local.sum
 /junkit
 storage/logs/*.log
 storage/uploads/*
+storage/bootstrap/email_blocklist.conf
 !storage/uploads/.gitkeep
 *.test
 *.out
