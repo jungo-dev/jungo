@@ -7,13 +7,18 @@ FROM golang:1.26-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 
 # =============================================================================
 # dev — hot-reload via Air (make app-dev)
 # =============================================================================
 FROM base AS dev
-RUN go install github.com/air-verse/air@latest
+ARG TARGETARCH
+ARG AIR_VERSION=1.67.4
+RUN wget -qO- "https://github.com/air-verse/air/releases/download/v${AIR_VERSION}/air_${AIR_VERSION}_linux_${TARGETARCH}.tar.gz" \
+    | tar -xz -C /go/bin air
 COPY . .
 EXPOSE 8080
 CMD ["sh", "-c", "rm -f tmp/build-errors.log; air -c .air.toml"]

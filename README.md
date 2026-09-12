@@ -9,6 +9,29 @@ If you're new here, read this file top to bottom once, then use it as a map back
 
 ---
 
+## 0. Before you start — required tools
+
+**This project will not run without these installed first.**
+
+| Tool | Needed for | macOS | Windows |
+|---|---|---|---|
+| **Docker Desktop** (Docker + Docker Compose) | Running the app, Postgres, and every other service — the primary, supported way to run this project | `brew install --cask docker`, or download from [docker.com](https://www.docker.com/products/docker-desktop/) | Download from [docker.com](https://www.docker.com/products/docker-desktop/) (the installer sets up the required WSL2 backend), or `winget install Docker.DockerDesktop` |
+| **[`golang-migrate`](https://github.com/golang-migrate/migrate) CLI** | `make migrate-*` — applying database migrations, part of the Quick start below. It always runs from your host, pointed at the Postgres port the dev/prod stack exposes | `brew install golang-migrate` | `scoop install migrate` (needs [Scoop](https://scoop.sh) — see below if you don't have it) |
+| **[`sqlc`](https://sqlc.dev)** | `make sqlc` — regenerating `internal/database/sqlc` after you change a query. Not needed just to run the app — only if you touch `internal/database/queries` | `brew install sqlc` | Download the Windows binary from the [sqlc releases page](https://github.com/sqlc-dev/sqlc/releases) |
+
+Windows without [Scoop](https://scoop.sh) yet: install it first, in a regular (non-admin)
+PowerShell terminal, then run `scoop install migrate` as above.
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+```
+
+After installing, run `make app-init` — it re-checks whether `migrate` and `sqlc` are on your
+`PATH` and prints the exact install command if either is missing.
+
+---
+
 ## 1. Mental model
 
 ```
@@ -180,6 +203,19 @@ documents every variable inline. Highlights:
 | `STORAGE_BASE_DIR` / `STORAGE_BASE_URL` | Where uploaded avatars are stored and served from |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Ops alerts for panics/rate-limit breaches; empty = safe no-op |
 | `RECAPTCHA_MOCK` | Verifier always succeeds when true (default outside production) |
+
+Three more variables aren't part of `Config` — they're read directly by
+`deploy/docker-compose.dev.yaml` / `docker-compose.yaml` to cap the `app` container's resources
+(both files fall back to sane defaults if unset, so you only need these to override):
+
+| Variable | Purpose | Dev default | Prod default |
+|---|---|---|---|
+| `APP_MEM_LIMIT` | Hard memory cap on the `app` container | `1024M` | `2048M` |
+| `APP_CPU_LIMIT` | Hard CPU cap on the `app` container | `1.0` | `2.0` |
+| `APP_GOMEMLIMIT` | Go's soft memory limit ([`GOMEMLIMIT`](https://pkg.go.dev/runtime#hdr-Environment_Variables)) — lets the GC back off before hitting the hard cap above instead of getting OOM-killed. Keep it ~90% of `APP_MEM_LIMIT` | `900MiB` | `1800MiB` |
+
+Lower-spec dev machines rarely need to touch these; raise them if the first build or hot-reload
+feels CPU/memory-starved.
 
 ---
 
@@ -569,14 +605,14 @@ dependency, no local checkout needed) holds every infrastructure package listed 
 
 ## 10. Requirements
 
-- Go **1.26.5**
-- Docker + Docker Compose (recommended path — handles Postgres, hot reload, etc. for you)
-- [`golang-migrate`](https://github.com/golang-migrate/migrate) CLI, only if running `make
-  migrate-*` from your host instead of inside the container
-- [`sqlc`](https://sqlc.dev), only if regenerating `internal/database/sqlc` via `make sqlc`
+See [0. Before you start](#0-before-you-start--required-tools) for install instructions (macOS +
+Windows) for everything below.
 
-`make app-init` checks whether `migrate` and `sqlc` are on your `PATH` and tells you the install
-command if either is missing.
+- Docker + Docker Compose (recommended path — handles Postgres, hot reload, etc. for you)
+- Go **1.26.5**, only if running things outside Docker (`go build`, `go test`, etc.)
+- [`golang-migrate`](https://github.com/golang-migrate/migrate) CLI — `make migrate-*` always
+  shells out to it from your host
+- [`sqlc`](https://sqlc.dev), only if regenerating `internal/database/sqlc` via `make sqlc`
 
 ---
 
