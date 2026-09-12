@@ -6,6 +6,9 @@ COMPOSE_PROD = docker compose -f deploy/docker-compose.yaml --env-file .env
 MIGRATE_DSN = "postgres://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_HOST_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
 PROFILE = $(if $(WITH),--profile $(WITH),)
 
+V ?= 0
+Q := $(if $(filter 1,$(V)),,@)
+
 CYAN := $(shell tput setaf 6 2>/dev/null)
 YELLOW := $(shell tput setaf 3 2>/dev/null)
 GREEN := $(shell tput setaf 2 2>/dev/null)
@@ -43,32 +46,32 @@ app-init: ## Interactively create .env (app name, db name/user/pass, ports) for 
 # =============================================================================
 .PHONY: app-dev app-dev-bg app-dev-down app-dev-local app-logs
 app-dev: ## Start dev stack (App + PostgreSQL). Add WITH=cache or WITH=full for optional services.
-	$(COMPOSE_DEV) $(PROFILE) up --build
+	$(Q)$(COMPOSE_DEV) $(PROFILE) up --build
 
 app-dev-bg: ## Same as app-dev, detached
-	$(COMPOSE_DEV) $(PROFILE) up --build -d
+	$(Q)$(COMPOSE_DEV) $(PROFILE) up --build -d
 
 app-dev-down: ## Stop and remove the dev stack
-	$(COMPOSE_DEV) down
+	$(Q)$(COMPOSE_DEV) down
 
 app-dev-local: ## Same as app-dev, but uses local ../junkit (see go.work.local) — personal only, gitignored
-	$(COMPOSE_DEV) -f deploy/docker-compose.local.yaml $(PROFILE) up --build
+	$(Q)$(COMPOSE_DEV) -f deploy/docker-compose.local.yaml $(PROFILE) up --build
 
 app-logs: ## Follow the app container's logs
-	$(COMPOSE_DEV) logs -f app
+	$(Q)$(COMPOSE_DEV) logs -f app
 
 # =============================================================================
 # Production
 # =============================================================================
 .PHONY: app-prod app-prod-bg app-prod-down
 app-prod: ## Build and start the prod stack (App + PostgreSQL). Add WITH=cache or WITH=full for optional services.
-	$(COMPOSE_PROD) $(PROFILE) up --build
+	$(Q)$(COMPOSE_PROD) $(PROFILE) up --build
 
 app-prod-bg: ## Same as app-prod, detached
-	$(COMPOSE_PROD) $(PROFILE) up --build -d
+	$(Q)$(COMPOSE_PROD) $(PROFILE) up --build -d
 
 app-prod-down: ## Stop and remove the prod stack
-	$(COMPOSE_PROD) down
+	$(Q)$(COMPOSE_PROD) down
 
 # =============================================================================
 #  Database Migrations (require DB running - run 'make app-dev-bg' first)
@@ -78,17 +81,17 @@ app-prod-down: ## Stop and remove the prod stack
 .PHONY: migrate-create migrate-up migrate-down migrate-refresh sqlc
 migrate-create: ## Create a new migration: make migrate-create NAME=add_x_table
 	@if [ -z "$(NAME)" ]; then echo "Usage: make migrate-create NAME=<name>" && exit 1; fi
-	migrate create -ext sql -dir internal/database/migrations -seq $(NAME)
+	$(Q)migrate create -ext sql -dir internal/database/migrations -seq $(NAME)
 
 migrate-up: ## Apply all pending migrations
-	migrate -database $(MIGRATE_DSN) -path internal/database/migrations up
+	$(Q)migrate -database $(MIGRATE_DSN) -path internal/database/migrations up
 
 migrate-down: ## Roll back the last migration
-	migrate -database $(MIGRATE_DSN) -path internal/database/migrations down 1
+	$(Q)migrate -database $(MIGRATE_DSN) -path internal/database/migrations down 1
 
 migrate-refresh: ## Drop everything and re-run all migrations (destroys data)
-	migrate -database $(MIGRATE_DSN) -path internal/database/migrations drop -f
-	$(MAKE) migrate-up
+	$(Q)migrate -database $(MIGRATE_DSN) -path internal/database/migrations drop -f
+	$(Q)$(MAKE) migrate-up
 
 # =============================================================================
 #  SQLC Generation
@@ -96,7 +99,7 @@ migrate-refresh: ## Drop everything and re-run all migrations (destroys data)
 #  Website: https://docs.sqlc.dev/
 # =============================================================================
 sqlc: ## Regenerate internal/database/sqlc from internal/database/queries
-	sqlc generate
+	$(Q)sqlc generate
 
 # =============================================================================
 # Scaffold
@@ -104,15 +107,15 @@ sqlc: ## Regenerate internal/database/sqlc from internal/database/queries
 .PHONY: feature feature-remove command
 feature: ## Generate a new feature: make feature NAME=product [TABLE=custom_table]
 	@if [ -z "$(NAME)" ]; then echo "Usage: make feature NAME=<snake_case_name> [TABLE=<table_name>]" && exit 1; fi
-	go run ./cmd/scaffold -name $(NAME) -table "$(TABLE)"
+	$(Q)go run ./cmd/scaffold -name $(NAME) -table "$(TABLE)"
 
 feature-remove: ## Remove a generated feature: make feature-remove NAME=product
 	@if [ -z "$(NAME)" ]; then echo "Usage: make feature-remove NAME=<snake_case_name>" && exit 1; fi
-	go run ./cmd/scaffold -name $(NAME) -mode remove
+	$(Q)go run ./cmd/scaffold -name $(NAME) -mode remove
 
 command: ## Generate a new CLI command: make command NAME=health-check SIGNATURE=health:check [FEATURE=user]
 	@if [ -z "$(NAME)" ] || [ -z "$(SIGNATURE)" ]; then echo "Usage: make command NAME=<snake_case_name> SIGNATURE=<cli:signature> [FEATURE=<feature_name>]" && exit 1; fi
-	go run ./cmd/scaffold -type command -name $(NAME) -signature $(SIGNATURE) -feature "$(FEATURE)"
+	$(Q)go run ./cmd/scaffold -type command -name $(NAME) -signature $(SIGNATURE) -feature "$(FEATURE)"
 
 # =============================================================================
 # Console
@@ -133,16 +136,16 @@ console: ## Run a CLI command inside whichever app stack is running, dev or prod
 # =============================================================================
 .PHONY: build test vet fmt tidy
 build: ## Compile the API binary
-	go build -o bin/api ./cmd/api
+	$(Q)go build -o bin/api ./cmd/api
 
 test: ## Run all tests
-	go test ./...
+	$(Q)go test ./...
 
 vet: ## Run go vet
-	go vet ./...
+	$(Q)go vet ./...
 
 fmt: ## Format all Go source
-	gofmt -w .
+	$(Q)gofmt -w .
 
 tidy: ## Tidy go.mod/go.sum
-	go mod tidy
+	$(Q)go mod tidy
