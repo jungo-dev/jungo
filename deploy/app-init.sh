@@ -16,6 +16,11 @@ if [ -f .env ]; then
 	exit 1
 fi
 
+if [ ! -f .env.example ]; then
+	echo "${RED}Error: .env.example not found next to this script's repo root.${RESET}" >&2
+	exit 1
+fi
+
 echo "${CYAN}== Jungo app setup ==${RESET}"
 echo "Press Enter to accept the default shown in [brackets]."
 echo ""
@@ -116,14 +121,30 @@ DB_NAME=$(prompt "Database name" "jungo")
 DB_USER=$(prompt "Database user" "postgres")
 DB_PASSWORD=$(prompt_secret "Database password" "postgres")
 API_SERVER_PORT=$(prompt_port "App port (host)" "8080")
-DB_HOST_PORT=$(prompt_port "Database port (host)" "5432")
+while true; do
+	DB_HOST_PORT=$(prompt_port "Database port (host)" "5432")
+	if [ "$DB_HOST_PORT" = "$API_SERVER_PORT" ]; then
+		echo "${RED}  -> Must differ from the app port ($API_SERVER_PORT).${RESET}" >&2
+		continue
+	fi
+	break
+done
 API_KEY=$(gen_secret)
 TRACER_DEBUG_VALUE=$(printf '%04d' $((RANDOM % 10000)))
+
+cleanup_on_failure() {
+	rm -f .env .env.bak
+}
+trap cleanup_on_failure ERR INT TERM
 
 cp .env.example .env
 
 set_env() {
 	local key="$1" value="$2" escaped
+	if ! grep -q "^${key}=" .env; then
+		echo "${RED}Error: ${key} not found in .env.example — script and template are out of sync.${RESET}" >&2
+		exit 1
+	fi
 	escaped=$(printf '%s' "$value" | sed -e 's/[\/&]/\\&/g')
 	sed -i.bak "s/^${key}=.*/${key}=${escaped}/" .env
 }
@@ -136,7 +157,9 @@ set_env "API_SERVER_PORT" "$API_SERVER_PORT"
 set_env "DB_HOST_PORT" "$DB_HOST_PORT"
 set_env "API_KEY" "$API_KEY"
 set_env "TRACER_DEBUG_VALUE" "$TRACER_DEBUG_VALUE"
+set_env "STORAGE_BASE_URL" "http://localhost:${API_SERVER_PORT}/uploads"
 rm -f .env.bak
+trap - ERR INT TERM
 
 echo ""
 echo "${CYAN}== .env created ==${RESET}"
