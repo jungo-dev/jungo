@@ -40,8 +40,8 @@ func (r *UserRepository) Create(ctx context.Context, input domain.CreateUserInpu
 }
 
 // GetByUUID implements domain.UserRepository.
-func (r *UserRepository) GetByUUID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
-	row, err := sqlc.New(r.db.Executor(ctx)).GetUserByUUID(ctx, id)
+func (r *UserRepository) GetByUUID(ctx context.Context, uid uuid.UUID) (*domain.User, error) {
+	row, err := sqlc.New(r.db.Executor(ctx)).GetUserByUUID(ctx, uid)
 	if err != nil {
 		return nil, database.Match(err, map[database.ErrorType]error{
 			database.ErrorNotFound: domain.ErrUserNotFound,
@@ -89,9 +89,9 @@ func (r *UserRepository) List(ctx context.Context, filter domain.UserListFilter)
 }
 
 // Update implements domain.UserRepository.
-func (r *UserRepository) Update(ctx context.Context, id uuid.UUID, input domain.UpdateUserInput) (*domain.User, error) {
+func (r *UserRepository) Update(ctx context.Context, uid uuid.UUID, input domain.UpdateUserInput) (*domain.User, error) {
 	row, err := sqlc.New(r.db.Executor(ctx)).UpdateUser(ctx, sqlc.UpdateUserParams{
-		Uuid:        id,
+		Uuid:        uid,
 		FirstName:   input.FirstName,
 		LastName:    input.LastName,
 		PhoneNumber: input.PhoneNumber,
@@ -107,8 +107,8 @@ func (r *UserRepository) Update(ctx context.Context, id uuid.UUID, input domain.
 }
 
 // Delete implements domain.UserRepository.
-func (r *UserRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	rowsAffected, err := sqlc.New(r.db.Executor(ctx)).DeleteUser(ctx, id)
+func (r *UserRepository) Delete(ctx context.Context, uid uuid.UUID) error {
+	rowsAffected, err := sqlc.New(r.db.Executor(ctx)).DeleteUser(ctx, uid)
 	if err != nil {
 		return err
 	}

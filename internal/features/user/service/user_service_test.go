@@ -17,19 +17,19 @@ import (
 // which surfaces unintended calls immediately instead of silently zero-valuing them.
 type fakeUserRepository struct {
 	CreateFunc     func(ctx context.Context, input domain.CreateUserInput, passwordHash string) (*domain.User, error)
-	GetByUUIDFunc  func(ctx context.Context, id uuid.UUID) (*domain.User, error)
+	GetByUUIDFunc  func(ctx context.Context, uid uuid.UUID) (*domain.User, error)
 	GetByEmailFunc func(ctx context.Context, email string) (*domain.User, error)
 	ListFunc       func(ctx context.Context, filter domain.UserListFilter) ([]*domain.User, int64, error)
-	UpdateFunc     func(ctx context.Context, id uuid.UUID, input domain.UpdateUserInput) (*domain.User, error)
-	DeleteFunc     func(ctx context.Context, id uuid.UUID) error
+	UpdateFunc     func(ctx context.Context, uid uuid.UUID, input domain.UpdateUserInput) (*domain.User, error)
+	DeleteFunc     func(ctx context.Context, uid uuid.UUID) error
 }
 
 func (f *fakeUserRepository) Create(ctx context.Context, input domain.CreateUserInput, passwordHash string) (*domain.User, error) {
 	return f.CreateFunc(ctx, input, passwordHash)
 }
 
-func (f *fakeUserRepository) GetByUUID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
-	return f.GetByUUIDFunc(ctx, id)
+func (f *fakeUserRepository) GetByUUID(ctx context.Context, uid uuid.UUID) (*domain.User, error) {
+	return f.GetByUUIDFunc(ctx, uid)
 }
 
 func (f *fakeUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
@@ -40,12 +40,12 @@ func (f *fakeUserRepository) List(ctx context.Context, filter domain.UserListFil
 	return f.ListFunc(ctx, filter)
 }
 
-func (f *fakeUserRepository) Update(ctx context.Context, id uuid.UUID, input domain.UpdateUserInput) (*domain.User, error) {
-	return f.UpdateFunc(ctx, id, input)
+func (f *fakeUserRepository) Update(ctx context.Context, uid uuid.UUID, input domain.UpdateUserInput) (*domain.User, error) {
+	return f.UpdateFunc(ctx, uid, input)
 }
 
-func (f *fakeUserRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return f.DeleteFunc(ctx, id)
+func (f *fakeUserRepository) Delete(ctx context.Context, uid uuid.UUID) error {
+	return f.DeleteFunc(ctx, uid)
 }
 
 // fakeStorage is a hand-written test double for storage.Service that records
@@ -330,9 +330,9 @@ func TestUserService_GetUser(t *testing.T) {
 	userID := uuid.New()
 	want := &domain.User{Uuid: userID, Email: "jane@example.com"}
 	repo := &fakeUserRepository{
-		GetByUUIDFunc: func(_ context.Context, id uuid.UUID) (*domain.User, error) {
-			if id != userID {
-				t.Errorf("GetByUUID called with %v, want %v", id, userID)
+		GetByUUIDFunc: func(_ context.Context, uid uuid.UUID) (*domain.User, error) {
+			if uid != userID {
+				t.Errorf("GetByUUID called with %v, want %v", uid, userID)
 			}
 			return want, nil
 		},
@@ -375,9 +375,9 @@ func TestUserService_UpdateUser(t *testing.T) {
 	input := domain.UpdateUserInput{FirstName: strPtr("New")}
 	want := &domain.User{Uuid: userID, FirstName: "New"}
 	repo := &fakeUserRepository{
-		UpdateFunc: func(_ context.Context, id uuid.UUID, in domain.UpdateUserInput) (*domain.User, error) {
-			if id != userID || in.FirstName == nil || *in.FirstName != "New" {
-				t.Errorf("Update called with (%v, %+v), want (%v, %+v)", id, in, userID, input)
+		UpdateFunc: func(_ context.Context, uid uuid.UUID, in domain.UpdateUserInput) (*domain.User, error) {
+			if uid != userID || in.FirstName == nil || *in.FirstName != "New" {
+				t.Errorf("Update called with (%v, %+v), want (%v, %+v)", uid, in, userID, input)
 			}
 			return want, nil
 		},
@@ -398,8 +398,8 @@ func TestUserService_DeleteUser(t *testing.T) {
 		userID := uuid.New()
 		var gotID uuid.UUID
 		repo := &fakeUserRepository{
-			DeleteFunc: func(_ context.Context, id uuid.UUID) error {
-				gotID = id
+			DeleteFunc: func(_ context.Context, uid uuid.UUID) error {
+				gotID = uid
 				return nil
 			},
 		}

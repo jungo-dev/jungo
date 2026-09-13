@@ -161,19 +161,19 @@ type {{.Pascal}}ListFilter struct {
 // {{.Pascal}}Repository defines database operations for {{.Name}}s.
 type {{.Pascal}}Repository interface {
 	Create(ctx context.Context, input Create{{.Pascal}}Input) (*{{.Pascal}}, error)
-	GetByUUID(ctx context.Context, id uuid.UUID) (*{{.Pascal}}, error)
+	GetByUUID(ctx context.Context, uid uuid.UUID) (*{{.Pascal}}, error)
 	List(ctx context.Context, filter {{.Pascal}}ListFilter) ([]*{{.Pascal}}, int64, error)
-	Update(ctx context.Context, id uuid.UUID, input Update{{.Pascal}}Input) (*{{.Pascal}}, error)
-	Delete(ctx context.Context, id uuid.UUID) error
+	Update(ctx context.Context, uid uuid.UUID, input Update{{.Pascal}}Input) (*{{.Pascal}}, error)
+	Delete(ctx context.Context, uid uuid.UUID) error
 }
 
 // {{.Pascal}}Service defines business logic for {{.Name}}s.
 type {{.Pascal}}Service interface {
 	Create{{.Pascal}}(ctx context.Context, input Create{{.Pascal}}Input) (*{{.Pascal}}, error)
-	Get{{.Pascal}}(ctx context.Context, id uuid.UUID) (*{{.Pascal}}, error)
+	Get{{.Pascal}}(ctx context.Context, uid uuid.UUID) (*{{.Pascal}}, error)
 	Get{{.Pascal}}s(ctx context.Context, filter {{.Pascal}}ListFilter) ([]*{{.Pascal}}, int64, error)
-	Update{{.Pascal}}(ctx context.Context, id uuid.UUID, input Update{{.Pascal}}Input) (*{{.Pascal}}, error)
-	Delete{{.Pascal}}(ctx context.Context, id uuid.UUID) error
+	Update{{.Pascal}}(ctx context.Context, uid uuid.UUID, input Update{{.Pascal}}Input) (*{{.Pascal}}, error)
+	Delete{{.Pascal}}(ctx context.Context, uid uuid.UUID) error
 }
 `
 
@@ -223,8 +223,8 @@ func (r *{{.Pascal}}Repository) Create(ctx context.Context, input domain.Create{
 }
 
 // GetByUUID implements domain.{{.Pascal}}Repository.
-func (r *{{.Pascal}}Repository) GetByUUID(ctx context.Context, id uuid.UUID) (*domain.{{.Pascal}}, error) {
-	row, err := sqlc.New(r.db.Executor(ctx)).Get{{.Pascal}}ByUUID(ctx, id)
+func (r *{{.Pascal}}Repository) GetByUUID(ctx context.Context, uid uuid.UUID) (*domain.{{.Pascal}}, error) {
+	row, err := sqlc.New(r.db.Executor(ctx)).Get{{.Pascal}}ByUUID(ctx, uid)
 	if err != nil {
 		return nil, database.Match(err, map[database.ErrorType]error{
 			database.ErrorNotFound: domain.Err{{.Pascal}}NotFound,
@@ -261,9 +261,9 @@ func (r *{{.Pascal}}Repository) List(ctx context.Context, filter domain.{{.Pasca
 }
 
 // Update implements domain.{{.Pascal}}Repository.
-func (r *{{.Pascal}}Repository) Update(ctx context.Context, id uuid.UUID, input domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error) {
+func (r *{{.Pascal}}Repository) Update(ctx context.Context, uid uuid.UUID, input domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error) {
 	row, err := sqlc.New(r.db.Executor(ctx)).Update{{.Pascal}}(ctx, sqlc.Update{{.Pascal}}Params{
-		Uuid:   id,
+		Uuid:   uid,
 		Name:   input.Name,
 		Status: input.Status,
 	})
@@ -277,8 +277,8 @@ func (r *{{.Pascal}}Repository) Update(ctx context.Context, id uuid.UUID, input 
 
 // Delete implements domain.{{.Pascal}}Repository. It soft-deletes: the row is kept
 // and stamped with deleted_at, and every other query excludes it from then on.
-func (r *{{.Pascal}}Repository) Delete(ctx context.Context, id uuid.UUID) error {
-	rowsAffected, err := sqlc.New(r.db.Executor(ctx)).Delete{{.Pascal}}(ctx, id)
+func (r *{{.Pascal}}Repository) Delete(ctx context.Context, uid uuid.UUID) error {
+	rowsAffected, err := sqlc.New(r.db.Executor(ctx)).Delete{{.Pascal}}(ctx, uid)
 	if err != nil {
 		return err
 	}
@@ -334,9 +334,9 @@ func (s *{{.Pascal}}Service) Create{{.Pascal}}(ctx context.Context, input domain
 }
 
 // Get{{.Pascal}} returns a {{.Name}} by UUID.
-func (s *{{.Pascal}}Service) Get{{.Pascal}}(ctx context.Context, id uuid.UUID) (*domain.{{.Pascal}}, error) {
-	return s.cache.GetOrSet(ctx, cacheKey(id), cacheTTL, func() (*domain.{{.Pascal}}, error) {
-		return s.repo.GetByUUID(ctx, id)
+func (s *{{.Pascal}}Service) Get{{.Pascal}}(ctx context.Context, uid uuid.UUID) (*domain.{{.Pascal}}, error) {
+	return s.cache.GetOrSet(ctx, cacheKey(uid), cacheTTL, func() (*domain.{{.Pascal}}, error) {
+		return s.repo.GetByUUID(ctx, uid)
 	})
 }
 
@@ -348,29 +348,29 @@ func (s *{{.Pascal}}Service) Get{{.Pascal}}s(ctx context.Context, filter domain.
 // Update{{.Pascal}} updates {{.Name}} information.
 //
 // Flow: update in DB -> invalidate cache -> return
-func (s *{{.Pascal}}Service) Update{{.Pascal}}(ctx context.Context, id uuid.UUID, input domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error) {
-	updated, err := s.repo.Update(ctx, id, input)
+func (s *{{.Pascal}}Service) Update{{.Pascal}}(ctx context.Context, uid uuid.UUID, input domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error) {
+	updated, err := s.repo.Update(ctx, uid, input)
 	if err != nil {
 		return nil, err
 	}
-	_ = s.cache.Delete(ctx, cacheKey(id))
+	_ = s.cache.Delete(ctx, cacheKey(uid))
 	return updated, nil
 }
 
 // Delete{{.Pascal}} deletes a {{.Name}} by UUID.
 //
 // Flow: delete in DB -> invalidate cache
-func (s *{{.Pascal}}Service) Delete{{.Pascal}}(ctx context.Context, id uuid.UUID) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+func (s *{{.Pascal}}Service) Delete{{.Pascal}}(ctx context.Context, uid uuid.UUID) error {
+	if err := s.repo.Delete(ctx, uid); err != nil {
 		return err
 	}
-	_ = s.cache.Delete(ctx, cacheKey(id))
+	_ = s.cache.Delete(ctx, cacheKey(uid))
 	return nil
 }
 
 // cacheKey returns the cache key for a {{.Name}} identified by uuid.
-func cacheKey(id uuid.UUID) string {
-	return "{{.Name}}:" + id.String()
+func cacheKey(uid uuid.UUID) string {
+	return "{{.Name}}:" + uid.String()
 }
 `
 
@@ -392,30 +392,30 @@ import (
 // which surfaces unintended calls immediately instead of silently zero-valuing them.
 type fake{{.Pascal}}Repository struct {
 	CreateFunc    func(ctx context.Context, input domain.Create{{.Pascal}}Input) (*domain.{{.Pascal}}, error)
-	GetByUUIDFunc func(ctx context.Context, id uuid.UUID) (*domain.{{.Pascal}}, error)
+	GetByUUIDFunc func(ctx context.Context, uid uuid.UUID) (*domain.{{.Pascal}}, error)
 	ListFunc      func(ctx context.Context, filter domain.{{.Pascal}}ListFilter) ([]*domain.{{.Pascal}}, int64, error)
-	UpdateFunc    func(ctx context.Context, id uuid.UUID, input domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error)
-	DeleteFunc    func(ctx context.Context, id uuid.UUID) error
+	UpdateFunc    func(ctx context.Context, uid uuid.UUID, input domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error)
+	DeleteFunc    func(ctx context.Context, uid uuid.UUID) error
 }
 
 func (f *fake{{.Pascal}}Repository) Create(ctx context.Context, input domain.Create{{.Pascal}}Input) (*domain.{{.Pascal}}, error) {
 	return f.CreateFunc(ctx, input)
 }
 
-func (f *fake{{.Pascal}}Repository) GetByUUID(ctx context.Context, id uuid.UUID) (*domain.{{.Pascal}}, error) {
-	return f.GetByUUIDFunc(ctx, id)
+func (f *fake{{.Pascal}}Repository) GetByUUID(ctx context.Context, uid uuid.UUID) (*domain.{{.Pascal}}, error) {
+	return f.GetByUUIDFunc(ctx, uid)
 }
 
 func (f *fake{{.Pascal}}Repository) List(ctx context.Context, filter domain.{{.Pascal}}ListFilter) ([]*domain.{{.Pascal}}, int64, error) {
 	return f.ListFunc(ctx, filter)
 }
 
-func (f *fake{{.Pascal}}Repository) Update(ctx context.Context, id uuid.UUID, input domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error) {
-	return f.UpdateFunc(ctx, id, input)
+func (f *fake{{.Pascal}}Repository) Update(ctx context.Context, uid uuid.UUID, input domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error) {
+	return f.UpdateFunc(ctx, uid, input)
 }
 
-func (f *fake{{.Pascal}}Repository) Delete(ctx context.Context, id uuid.UUID) error {
-	return f.DeleteFunc(ctx, id)
+func (f *fake{{.Pascal}}Repository) Delete(ctx context.Context, uid uuid.UUID) error {
+	return f.DeleteFunc(ctx, uid)
 }
 
 // fake{{.Pascal}}Cache is a pass-through cache stub: GetOrSet always calls fetchFn (simulating
@@ -468,19 +468,19 @@ func TestCreate{{.Pascal}}(t *testing.T) {
 }
 
 func TestGet{{.Pascal}}(t *testing.T) {
-	id := uuid.New()
-	want := &domain.{{.Pascal}}{Uuid: id}
+	uid := uuid.New()
+	want := &domain.{{.Pascal}}{Uuid: uid}
 	repo := &fake{{.Pascal}}Repository{
 		GetByUUIDFunc: func(_ context.Context, gotID uuid.UUID) (*domain.{{.Pascal}}, error) {
-			if gotID != id {
-				t.Errorf("GetByUUID called with %v, want %v", gotID, id)
+			if gotID != uid {
+				t.Errorf("GetByUUID called with %v, want %v", gotID, uid)
 			}
 			return want, nil
 		},
 	}
 	svc := New{{.Pascal}}Service(repo, &fake{{.Pascal}}Cache{})
 
-	got, err := svc.Get{{.Pascal}}(context.Background(), id)
+	got, err := svc.Get{{.Pascal}}(context.Background(), uid)
 	if err != nil {
 		t.Fatalf("Get{{.Pascal}}() error = %v, want nil", err)
 	}
@@ -525,7 +525,7 @@ func TestGet{{.Pascal}}s(t *testing.T) {
 }
 
 func TestUpdate{{.Pascal}}(t *testing.T) {
-	id := uuid.New()
+	uid := uuid.New()
 	repo := &fake{{.Pascal}}Repository{
 		UpdateFunc: func(_ context.Context, gotID uuid.UUID, _ domain.Update{{.Pascal}}Input) (*domain.{{.Pascal}}, error) {
 			return &domain.{{.Pascal}}{Uuid: gotID}, nil
@@ -534,11 +534,11 @@ func TestUpdate{{.Pascal}}(t *testing.T) {
 	cache := &fake{{.Pascal}}Cache{}
 	svc := New{{.Pascal}}Service(repo, cache)
 
-	if _, err := svc.Update{{.Pascal}}(context.Background(), id, domain.Update{{.Pascal}}Input{}); err != nil {
+	if _, err := svc.Update{{.Pascal}}(context.Background(), uid, domain.Update{{.Pascal}}Input{}); err != nil {
 		t.Fatalf("Update{{.Pascal}}() error = %v, want nil", err)
 	}
-	if len(cache.deletedKeys) != 1 || cache.deletedKeys[0] != cacheKey(id) {
-		t.Errorf("cache.Delete calls = %v, want exactly [%q]", cache.deletedKeys, cacheKey(id))
+	if len(cache.deletedKeys) != 1 || cache.deletedKeys[0] != cacheKey(uid) {
+		t.Errorf("cache.Delete calls = %v, want exactly [%q]", cache.deletedKeys, cacheKey(uid))
 	}
 }
 
@@ -562,18 +562,18 @@ func TestUpdate{{.Pascal}}_DoesNotInvalidateCacheOnError(t *testing.T) {
 }
 
 func TestDelete{{.Pascal}}(t *testing.T) {
-	id := uuid.New()
+	uid := uuid.New()
 	repo := &fake{{.Pascal}}Repository{
 		DeleteFunc: func(context.Context, uuid.UUID) error { return nil },
 	}
 	cache := &fake{{.Pascal}}Cache{}
 	svc := New{{.Pascal}}Service(repo, cache)
 
-	if err := svc.Delete{{.Pascal}}(context.Background(), id); err != nil {
+	if err := svc.Delete{{.Pascal}}(context.Background(), uid); err != nil {
 		t.Fatalf("Delete{{.Pascal}}() error = %v, want nil", err)
 	}
-	if len(cache.deletedKeys) != 1 || cache.deletedKeys[0] != cacheKey(id) {
-		t.Errorf("cache.Delete calls = %v, want exactly [%q]", cache.deletedKeys, cacheKey(id))
+	if len(cache.deletedKeys) != 1 || cache.deletedKeys[0] != cacheKey(uid) {
+		t.Errorf("cache.Delete calls = %v, want exactly [%q]", cache.deletedKeys, cacheKey(uid))
 	}
 }
 
@@ -605,11 +605,6 @@ import (
 
 	"{{.Module}}/internal/features/{{.Name}}/domain"
 )
-
-// {{.Pascal}}UuidParam binds the ":uuid" URI path parameter.
-type {{.Pascal}}UuidParam struct {
-	Uuid string {{"` + "`" + `"}}uri:"uuid" binding:"required,uuid"{{"` + "`" + `"}}
-}
 
 // Create{{.Pascal}}Request is the request body for POST /{{.Table}}.
 type Create{{.Pascal}}Request struct {
@@ -690,12 +685,12 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/jungo-dev/junkit/pagination"
 	"github.com/jungo-dev/junkit/response"
 	"github.com/jungo-dev/junkit/validation"
 
+	"{{.Module}}/internal/common/httpx"
 	"{{.Module}}/internal/features/{{.Name}}/domain"
 	v1dto "{{.Module}}/internal/features/{{.Name}}/dto/v1"
 )
@@ -731,12 +726,12 @@ func (h *{{.Pascal}}Handler) Create{{.Pascal}}(ctx *gin.Context) {
 
 // Get{{.Pascal}} handles GET /{{.Table}}/:uuid.
 func (h *{{.Pascal}}Handler) Get{{.Pascal}}(ctx *gin.Context) {
-	id, ok := h.parse{{.Pascal}}UUID(ctx)
+	uid, ok := httpx.ParseUUID(ctx, h.responder, h.validator)
 	if !ok {
 		return
 	}
 
-	item, err := h.service.Get{{.Pascal}}(ctx.Request.Context(), id)
+	item, err := h.service.Get{{.Pascal}}(ctx.Request.Context(), uid)
 	if err != nil {
 		h.responder.Error(ctx, err)
 		return
@@ -766,7 +761,7 @@ func (h *{{.Pascal}}Handler) List{{.Pascal}}s(ctx *gin.Context) {
 
 // Update{{.Pascal}} handles PATCH /{{.Table}}/:uuid.
 func (h *{{.Pascal}}Handler) Update{{.Pascal}}(ctx *gin.Context) {
-	id, ok := h.parse{{.Pascal}}UUID(ctx)
+	uid, ok := httpx.ParseUUID(ctx, h.responder, h.validator)
 	if !ok {
 		return
 	}
@@ -777,7 +772,7 @@ func (h *{{.Pascal}}Handler) Update{{.Pascal}}(ctx *gin.Context) {
 		return
 	}
 
-	item, err := h.service.Update{{.Pascal}}(ctx.Request.Context(), id, v1dto.ToUpdate{{.Pascal}}Input(req))
+	item, err := h.service.Update{{.Pascal}}(ctx.Request.Context(), uid, v1dto.ToUpdate{{.Pascal}}Input(req))
 	if err != nil {
 		h.responder.Error(ctx, err)
 		return
@@ -788,33 +783,17 @@ func (h *{{.Pascal}}Handler) Update{{.Pascal}}(ctx *gin.Context) {
 
 // Delete{{.Pascal}} handles DELETE /{{.Table}}/:uuid.
 func (h *{{.Pascal}}Handler) Delete{{.Pascal}}(ctx *gin.Context) {
-	id, ok := h.parse{{.Pascal}}UUID(ctx)
+	uid, ok := httpx.ParseUUID(ctx, h.responder, h.validator)
 	if !ok {
 		return
 	}
 
-	if err := h.service.Delete{{.Pascal}}(ctx.Request.Context(), id); err != nil {
+	if err := h.service.Delete{{.Pascal}}(ctx.Request.Context(), uid); err != nil {
 		h.responder.Error(ctx, err)
 		return
 	}
 
 	h.responder.Send(ctx, http.StatusOK, "{{.Name}}_deleted")
-}
-
-// parse{{.Pascal}}UUID binds and validates the ":uuid" path parameter.
-func (h *{{.Pascal}}Handler) parse{{.Pascal}}UUID(ctx *gin.Context) (uuid.UUID, bool) {
-	var params v1dto.{{.Pascal}}UuidParam
-	if err := ctx.ShouldBindUri(&params); err != nil {
-		h.responder.SendWithData(ctx, http.StatusUnprocessableEntity, "validation_error", h.validator.GetValidationErrors(ctx, err))
-		return uuid.Nil, false
-	}
-
-	id, err := uuid.Parse(params.Uuid)
-	if err != nil {
-		h.responder.Send(ctx, http.StatusBadRequest, "invalid_uuid")
-		return uuid.Nil, false
-	}
-	return id, true
 }
 `
 

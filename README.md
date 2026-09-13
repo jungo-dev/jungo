@@ -590,6 +590,7 @@ jungo/
 ├── cmd/api/             entrypoint (main.go)
 ├── internal/
 │   ├── app/             Fx composition root (fx.go, app.go)
+│   ├── common/          shared helpers for the whole project
 │   ├── config/          env-var → Config struct
 │   ├── router/          global middleware + route collection
 │   ├── middleware/      app-specific middleware (currently just Auth)

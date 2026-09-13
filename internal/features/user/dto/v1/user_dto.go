@@ -8,11 +8,6 @@ import (
 	"github.com/jungo-dev/junkit/pagination"
 )
 
-// UserUuidParam binds the ":uuid" URI path parameter.
-type UserUuidParam struct {
-	Uuid string `uri:"uuid" binding:"required,uuid"`
-}
-
 // CreateUserRequest is the request body for POST /users.
 type CreateUserRequest struct {
 	FirstName   string  `json:"first_name" binding:"required,min=2,max=50"`

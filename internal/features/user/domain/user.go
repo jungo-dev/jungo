@@ -61,22 +61,22 @@ type UserListFilter struct {
 // UserRepository defines database operations for users.
 type UserRepository interface {
 	Create(ctx context.Context, input CreateUserInput, passwordHash string) (*User, error)
-	GetByUUID(ctx context.Context, id uuid.UUID) (*User, error)
+	GetByUUID(ctx context.Context, uid uuid.UUID) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	List(ctx context.Context, filter UserListFilter) ([]*User, int64, error)
-	Update(ctx context.Context, id uuid.UUID, input UpdateUserInput) (*User, error)
-	Delete(ctx context.Context, id uuid.UUID) error
+	Update(ctx context.Context, uid uuid.UUID, input UpdateUserInput) (*User, error)
+	Delete(ctx context.Context, uid uuid.UUID) error
 }
 
 // UserService defines business logic for users.
 type UserService interface {
 	CreateUser(ctx context.Context, input CreateUserInput) (*User, error)
-	GetUser(ctx context.Context, id uuid.UUID) (*User, error)
+	GetUser(ctx context.Context, uid uuid.UUID) (*User, error)
 	GetUsers(ctx context.Context, filter UserListFilter) ([]*User, int64, error)
-	UpdateUser(ctx context.Context, id uuid.UUID, input UpdateUserInput) (*User, error)
-	DeleteUser(ctx context.Context, id uuid.UUID) error
-	UploadAvatar(ctx context.Context, id uuid.UUID, file AvatarFile) (*User, error)
-	DeleteAvatar(ctx context.Context, id uuid.UUID) (*User, error)
+	UpdateUser(ctx context.Context, uid uuid.UUID, input UpdateUserInput) (*User, error)
+	DeleteUser(ctx context.Context, uid uuid.UUID) error
+	UploadAvatar(ctx context.Context, uid uuid.UUID, file AvatarFile) (*User, error)
+	DeleteAvatar(ctx context.Context, uid uuid.UUID) (*User, error)
 }
 
 // AvatarFile represents an uploaded avatar file.

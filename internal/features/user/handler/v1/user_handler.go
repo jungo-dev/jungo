@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/jungo-dev/junkit/pagination"
 	"github.com/jungo-dev/junkit/response"
 	"github.com/jungo-dev/junkit/validation"
 
+	"jungo/internal/common/httpx"
 	"jungo/internal/features/user/domain"
 	v1dto "jungo/internal/features/user/dto/v1"
 )
@@ -55,12 +55,12 @@ func (h *UserHandler) CreateUser(ctx *gin.Context) {
 
 // GetUser handles GET /users/:uuid.
 func (h *UserHandler) GetUser(ctx *gin.Context) {
-	id, ok := h.parseUserUUID(ctx)
+	uid, ok := httpx.ParseUUID(ctx, h.responder, h.validator)
 	if !ok {
 		return
 	}
 
-	user, err := h.service.GetUser(ctx.Request.Context(), id)
+	user, err := h.service.GetUser(ctx.Request.Context(), uid)
 	if err != nil {
 		h.responder.Error(ctx, err)
 		return
@@ -90,7 +90,7 @@ func (h *UserHandler) ListUsers(ctx *gin.Context) {
 
 // UpdateUser handles PATCH /users/:uuid.
 func (h *UserHandler) UpdateUser(ctx *gin.Context) {
-	id, ok := h.parseUserUUID(ctx)
+	uid, ok := httpx.ParseUUID(ctx, h.responder, h.validator)
 	if !ok {
 		return
 	}
@@ -101,7 +101,7 @@ func (h *UserHandler) UpdateUser(ctx *gin.Context) {
 		return
 	}
 
-	user, err := h.service.UpdateUser(ctx.Request.Context(), id, v1dto.ToUpdateUserInput(req))
+	user, err := h.service.UpdateUser(ctx.Request.Context(), uid, v1dto.ToUpdateUserInput(req))
 	if err != nil {
 		h.responder.Error(ctx, err)
 		return
@@ -112,12 +112,12 @@ func (h *UserHandler) UpdateUser(ctx *gin.Context) {
 
 // DeleteUser handles DELETE /users/:uuid.
 func (h *UserHandler) DeleteUser(ctx *gin.Context) {
-	id, ok := h.parseUserUUID(ctx)
+	uid, ok := httpx.ParseUUID(ctx, h.responder, h.validator)
 	if !ok {
 		return
 	}
 
-	if err := h.service.DeleteUser(ctx.Request.Context(), id); err != nil {
+	if err := h.service.DeleteUser(ctx.Request.Context(), uid); err != nil {
 		h.responder.Error(ctx, err)
 		return
 	}
@@ -127,7 +127,7 @@ func (h *UserHandler) DeleteUser(ctx *gin.Context) {
 
 // UploadAvatar handles POST /users/:uuid/avatar.
 func (h *UserHandler) UploadAvatar(ctx *gin.Context) {
-	id, ok := h.parseUserUUID(ctx)
+	uid, ok := httpx.ParseUUID(ctx, h.responder, h.validator)
 	if !ok {
 		return
 	}
@@ -153,7 +153,7 @@ func (h *UserHandler) UploadAvatar(ctx *gin.Context) {
 	}
 	defer file.Close()
 
-	user, err := h.service.UploadAvatar(ctx.Request.Context(), id, domain.AvatarFile{
+	user, err := h.service.UploadAvatar(ctx.Request.Context(), uid, domain.AvatarFile{
 		Reader:   file,
 		Filename: fileHeader.Filename,
 	})
@@ -167,34 +167,18 @@ func (h *UserHandler) UploadAvatar(ctx *gin.Context) {
 
 // DeleteAvatar handles DELETE /users/:uuid/avatar.
 func (h *UserHandler) DeleteAvatar(ctx *gin.Context) {
-	id, ok := h.parseUserUUID(ctx)
+	uid, ok := httpx.ParseUUID(ctx, h.responder, h.validator)
 	if !ok {
 		return
 	}
 
-	user, err := h.service.DeleteAvatar(ctx.Request.Context(), id)
+	user, err := h.service.DeleteAvatar(ctx.Request.Context(), uid)
 	if err != nil {
 		h.responder.Error(ctx, err)
 		return
 	}
 
 	h.responder.SendWithData(ctx, http.StatusOK, "avatar_deleted", v1dto.NewUserResponse(user))
-}
-
-// parseUserUUID binds and validates the ":uuid" path parameter.
-func (h *UserHandler) parseUserUUID(ctx *gin.Context) (uuid.UUID, bool) {
-	var params v1dto.UserUuidParam
-	if err := ctx.ShouldBindUri(&params); err != nil {
-		h.responder.SendWithData(ctx, http.StatusUnprocessableEntity, "validation_error", h.validator.GetValidationErrors(ctx, err))
-		return uuid.Nil, false
-	}
-
-	id, err := uuid.Parse(params.Uuid)
-	if err != nil {
-		h.responder.Send(ctx, http.StatusBadRequest, "invalid_uuid")
-		return uuid.Nil, false
-	}
-	return id, true
 }
 
 // extensionOf returns filename's lowercase extension, including the leading dot.
