@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/jungo-dev/junkit/console"
 	"github.com/jungo-dev/junkit/scaffold"
@@ -116,6 +117,19 @@ func runRemove(data scaffold.FeatureData, importPath, moduleLine string) {
 		console.Fatalf("remove feature %q: %v", data.Name, err)
 	}
 
-	console.Warnf("migration files under %s were left in place — dropping a table is destructive, so roll it back yourself with `make migrate-down` and delete the files if you're sure", migrationsDir)
+	upFiles, _ := filepath.Glob(filepath.Join(migrationsDir, "*_"+data.Table+".up.sql"))
+	downFiles, _ := filepath.Glob(filepath.Join(migrationsDir, "*_"+data.Table+".down.sql"))
+	migrationFiles := append(upFiles, downFiles...)
+	if len(migrationFiles) == 0 {
+		migrationFiles = []string{
+			filepath.Join(migrationsDir, "NNNNNN_"+data.Table+".up.sql"),
+			filepath.Join(migrationsDir, "NNNNNN_"+data.Table+".down.sql"),
+		}
+	}
+
+	console.Warnf("dropping a table is destructive, so finish the database cleanup by hand:")
+	console.Infof("1. make migrate-down            — rolls back the last migration, dropping the %q table from your database", data.Table)
+	console.Infof("2. rm %s   — deletes the now-orphaned migration files", strings.Join(migrationFiles, " "))
+	console.Infof("3. make sqlc                     — regenerates internal/database/sqlc so %q is removed from models.go", data.Pascal)
 	console.Successf("Feature %q removed", data.Name)
 }
