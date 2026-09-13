@@ -31,12 +31,12 @@ RETURNING id, uuid, email, password_hash, first_name, last_name, phone_number, a
 `
 
 type CreateUserParams struct {
-	Email        string  `json:"email"`
-	PasswordHash string  `json:"password_hash"`
-	FirstName    string  `json:"first_name"`
-	LastName     string  `json:"last_name"`
-	PhoneNumber  *string `json:"phone_number"`
-	Status       int16   `json:"status"`
+	Email        string  `db:"email" json:"email"`
+	PasswordHash string  `db:"password_hash" json:"password_hash"`
+	FirstName    string  `db:"first_name" json:"first_name"`
+	LastName     string  `db:"last_name" json:"last_name"`
+	PhoneNumber  *string `db:"phone_number" json:"phone_number"`
+	Status       int16   `db:"status" json:"status"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -137,10 +137,10 @@ LIMIT $4 OFFSET $3
 `
 
 type ListUsersParams struct {
-	Search    string `json:"search"`
-	SortOrder string `json:"sort_order"`
-	Offset    int32  `json:"offset"`
-	Limit     int32  `json:"limit"`
+	Search    string `db:"search" json:"search"`
+	SortOrder string `db:"sort_order" json:"sort_order"`
+	Offset    int32  `db:"offset" json:"offset"`
+	Limit     int32  `db:"limit" json:"limit"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
@@ -154,7 +154,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 		return nil, err
 	}
 	defer rows.Close()
-	var items []User
+	items := []User{}
 	for rows.Next() {
 		var i User
 		if err := rows.Scan(
@@ -193,12 +193,12 @@ RETURNING id, uuid, email, password_hash, first_name, last_name, phone_number, a
 `
 
 type UpdateUserParams struct {
-	FirstName   *string   `json:"first_name"`
-	LastName    *string   `json:"last_name"`
-	PhoneNumber *string   `json:"phone_number"`
-	AvatarUrl   *string   `json:"avatar_url"`
-	Status      *int16    `json:"status"`
-	Uuid        uuid.UUID `json:"uuid"`
+	FirstName   *string   `db:"first_name" json:"first_name"`
+	LastName    *string   `db:"last_name" json:"last_name"`
+	PhoneNumber *string   `db:"phone_number" json:"phone_number"`
+	AvatarUrl   *string   `db:"avatar_url" json:"avatar_url"`
+	Status      *int16    `db:"status" json:"status"`
+	Uuid        uuid.UUID `db:"uuid" json:"uuid"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {

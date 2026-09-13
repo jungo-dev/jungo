@@ -2,18 +2,32 @@ version: "2"
 sql:
   - engine: "postgresql"
     queries: "internal/database/queries"
-    schema: "internal/database/migrations"
+    schema:
+      - "internal/database/migrations"
+      - "internal/database/functions"
     gen:
       go:
         package: "sqlc"
         out: "internal/database/sqlc"
         sql_package: "pgx/v5"
         emit_json_tags: true
-        emit_interface: false
+        json_tags_case_style: "snake"
+        emit_interface: true
+        emit_empty_slices: true
+        emit_db_tags: true
         emit_pointers_for_null_types: true
         overrides:
+          # ==== json ====
+          - db_type: "json"
+            go_type: "encoding/json.RawMessage"
+          - db_type: "jsonb"
+            go_type: "encoding/json.RawMessage"
+
+          # ==== uuid ====
           - db_type: "uuid"
             go_type: "github.com/google/uuid.UUID"
+
+          # ==== timestamptz ====
           - db_type: "timestamptz"
             go_type: "time.Time"
             nullable: false

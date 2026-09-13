@@ -78,13 +78,14 @@ app-prod-down: ## Stop and remove the prod stack
 #  Install: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 #  Website: https://github.com/golang-migrate/migrate/tree/master/cmd/migrate
 # =============================================================================
-.PHONY: migrate-create migrate-up migrate-down migrate-refresh sqlc
+.PHONY: migrate-create migrate-up migrate-down migrate-refresh migrate-functions sqlc
 migrate-create: ## Create a new migration: make migrate-create NAME=add_x_table
 	@if [ -z "$(NAME)" ]; then echo "Usage: make migrate-create NAME=<name>" && exit 1; fi
 	$(Q)migrate create -ext sql -dir internal/database/migrations -seq $(NAME)
 
-migrate-up: ## Apply all pending migrations
+migrate-up: ## Apply all pending migrations, then (re)apply all SQL functions
 	$(Q)migrate -database $(MIGRATE_DSN) -path internal/database/migrations up
+	$(Q)$(MAKE) migrate-functions
 
 migrate-down: ## Roll back the last migration
 	$(Q)migrate -database $(MIGRATE_DSN) -path internal/database/migrations down 1
@@ -92,6 +93,13 @@ migrate-down: ## Roll back the last migration
 migrate-refresh: ## Drop everything and re-run all migrations (destroys data)
 	$(Q)migrate -database $(MIGRATE_DSN) -path internal/database/migrations drop -f
 	$(Q)$(MAKE) migrate-up
+
+migrate-functions: ## Apply every internal/database/functions/*.sql (idempotent CREATE OR REPLACE, safe to re-run)
+	$(Q)for file in internal/database/functions/*.sql; do \
+		[ -f "$$file" ] || continue; \
+		echo "Applying $$file..."; \
+		psql $(MIGRATE_DSN) -v ON_ERROR_STOP=1 -f "$$file"; \
+	done
 
 # =============================================================================
 #  SQLC Generation

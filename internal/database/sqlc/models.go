@@ -11,16 +11,16 @@ import (
 )
 
 type User struct {
-	ID           int64      `json:"id"`
-	Uuid         uuid.UUID  `json:"uuid"`
-	Email        string     `json:"email"`
-	PasswordHash string     `json:"password_hash"`
-	FirstName    string     `json:"first_name"`
-	LastName     string     `json:"last_name"`
-	PhoneNumber  *string    `json:"phone_number"`
-	AvatarUrl    *string    `json:"avatar_url"`
-	Status       int16      `json:"status"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    *time.Time `json:"updated_at"`
-	DeletedAt    *time.Time `json:"deleted_at"`
+	ID           int64      `db:"id" json:"id"`
+	Uuid         uuid.UUID  `db:"uuid" json:"uuid"`
+	Email        string     `db:"email" json:"email"`
+	PasswordHash string     `db:"password_hash" json:"password_hash"`
+	FirstName    string     `db:"first_name" json:"first_name"`
+	LastName     string     `db:"last_name" json:"last_name"`
+	PhoneNumber  *string    `db:"phone_number" json:"phone_number"`
+	AvatarUrl    *string    `db:"avatar_url" json:"avatar_url"`
+	Status       int16      `db:"status" json:"status"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    *time.Time `db:"updated_at" json:"updated_at"`
+	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
 }
