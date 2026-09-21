@@ -11,8 +11,6 @@ services:
     env_file:
       - ../.env
     environment:
-      # Keeps Go's GC from growing the heap up to the hard memory limit below and getting
-      # OOM-killed; tune alongside APP_MEM_LIMIT if you change it (~90% of it is a good rule of thumb).
       GOMEMLIMIT: ${APP_GOMEMLIMIT:-1800MiB}
     volumes:
       - storage:/app/storage
