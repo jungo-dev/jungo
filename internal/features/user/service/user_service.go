@@ -67,7 +67,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, uid uuid.UUID, file doma
 		return nil, err
 	}
 
-	stop := tracer.Span(ctx, "Upload Avatar to Storage", tracer.CategoryExternal)
+	stop := tracer.Span(ctx, "Upload Avatar to Storage")
 	newURL, err := s.storage.UploadFile(ctx, file.Reader, file.Filename)
 	stop()
 	if err != nil {
