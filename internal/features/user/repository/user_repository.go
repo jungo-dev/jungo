@@ -61,6 +61,22 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 	return mapUser(row), nil
 }
 
+// GetCredentialsByEmail implements domain.UserRepository.
+func (r *UserRepository) GetCredentialsByEmail(ctx context.Context, email string) (*domain.Credentials, error) {
+	row, err := sqlc.New(r.db.Executor(ctx)).GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, database.Match(err, map[database.ErrorType]error{
+			database.ErrorNotFound: domain.ErrUserNotFound,
+		})
+	}
+	return &domain.Credentials{
+		ID:           row.ID,
+		Uuid:         row.Uuid,
+		PasswordHash: row.PasswordHash,
+		Status:       row.Status,
+	}, nil
+}
+
 // List implements domain.UserRepository, returning a page of users plus the
 // total count matching filter.Search for pagination metadata.
 func (r *UserRepository) List(ctx context.Context, filter domain.UserListFilter) ([]*domain.User, int64, error) {

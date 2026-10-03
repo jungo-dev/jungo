@@ -78,14 +78,15 @@ app-prod-down: ## Stop and remove the prod stack
 #  Install: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 #  Website: https://github.com/golang-migrate/migrate/tree/master/cmd/migrate
 # =============================================================================
-.PHONY: migrate-create migrate-up migrate-down migrate-refresh migrate-functions sqlc
+.PHONY: migrate-create migrate-up migrate-down migrate-refresh migrate-functions db-seed sqlc
 migrate-create: ## Create a new migration: make migrate-create NAME=add_x_table
 	@if [ -z "$(NAME)" ]; then echo "Usage: make migrate-create NAME=<name>" && exit 1; fi
 	$(Q)migrate create -ext sql -dir internal/database/migrations -seq $(NAME)
 
-migrate-up: ## Apply all pending migrations, then (re)apply all SQL functions
+migrate-up: ## Apply all pending migrations, (re)apply all SQL functions, then seed demo data in development
 	$(Q)migrate -database $(MIGRATE_DSN) -path internal/database/migrations up
 	$(Q)$(MAKE) migrate-functions
+	$(Q)if [ "$(API_ENVIRONMENT)" = "development" ]; then $(MAKE) db-seed; fi
 
 migrate-down: ## Roll back the last migration
 	$(Q)migrate -database $(MIGRATE_DSN) -path internal/database/migrations down 1
@@ -98,6 +99,13 @@ migrate-functions: ## Apply every internal/database/functions/*.sql (idempotent 
 	$(Q)for file in internal/database/functions/*.sql; do \
 		[ -f "$$file" ] || continue; \
 		echo "Applying $$file..."; \
+		psql $(MIGRATE_DSN) -v ON_ERROR_STOP=1 -f "$$file"; \
+	done
+
+db-seed: ## Apply every internal/database/seeders/*.sql in order (demo data, idempotent — never run in production)
+	$(Q)for file in internal/database/seeders/*.sql; do \
+		[ -f "$$file" ] || continue; \
+		echo "Seeding $$file..."; \
 		psql $(MIGRATE_DSN) -v ON_ERROR_STOP=1 -f "$$file"; \
 	done
 

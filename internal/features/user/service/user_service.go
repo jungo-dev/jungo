@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 
+	"github.com/jungo-dev/junkit/security"
 	"github.com/jungo-dev/junkit/storage"
 	"github.com/jungo-dev/junkit/tracer"
 
@@ -14,21 +14,25 @@ import (
 
 // UserService implements domain.UserService.
 type UserService struct {
-	repo    domain.UserRepository
-	storage storage.Service
+	repo     domain.UserRepository
+	storage  storage.Service
+	hasher   security.PasswordHasher
+	sessions domain.SessionRevoker
 }
 
 // NewUserService creates a UserService.
-func NewUserService(repo domain.UserRepository, storageService storage.Service) *UserService {
-	return &UserService{repo: repo, storage: storageService}
+func NewUserService(repo domain.UserRepository, storageService storage.Service, hasher security.PasswordHasher, sessions domain.SessionRevoker) *UserService {
+	return &UserService{repo: repo, storage: storageService, hasher: hasher, sessions: sessions}
 }
 
 // CreateUser creates a new user with hashed password.
 //
-// Flow: hash password -> persist user -> return
+// Flow: normalize email -> hash password -> persist user -> return
 func (s *UserService) CreateUser(ctx context.Context, input domain.CreateUserInput) (*domain.User, error) {
+	input.Email = domain.NormalizeEmail(input.Email)
+
 	stop := tracer.Span(ctx, "Bcrypt Hashing")
-	passwordHash, err := hashPassword(input.Password)
+	passwordHash, err := s.hasher.Hash(input.Password)
 	stop()
 
 	if err != nil {
@@ -43,19 +47,39 @@ func (s *UserService) GetUser(ctx context.Context, uid uuid.UUID) (*domain.User,
 	return s.repo.GetByUUID(ctx, uid)
 }
 
+// GetCredentialsByEmail returns the login credentials of the user with email.
+func (s *UserService) GetCredentialsByEmail(ctx context.Context, email string) (*domain.Credentials, error) {
+	return s.repo.GetCredentialsByEmail(ctx, domain.NormalizeEmail(email))
+}
+
 // GetUsers returns a paginated list of users.
 func (s *UserService) GetUsers(ctx context.Context, filter domain.UserListFilter) ([]*domain.User, int64, error) {
 	return s.repo.List(ctx, filter)
 }
 
 // UpdateUser updates user information.
+//
+// Flow: update in DB -> revoke sessions if no longer active -> return
 func (s *UserService) UpdateUser(ctx context.Context, uid uuid.UUID, input domain.UpdateUserInput) (*domain.User, error) {
-	return s.repo.Update(ctx, uid, input)
+	user, err := s.repo.Update(ctx, uid, input)
+	if err != nil {
+		return nil, err
+	}
+	if !user.IsActive() {
+		s.revokeSessions(ctx, uid)
+	}
+	return user, nil
 }
 
 // DeleteUser deletes a user by UUID.
+//
+// Flow: soft-delete in DB -> revoke sessions
 func (s *UserService) DeleteUser(ctx context.Context, uid uuid.UUID) error {
-	return s.repo.Delete(ctx, uid)
+	if err := s.repo.Delete(ctx, uid); err != nil {
+		return err
+	}
+	s.revokeSessions(ctx, uid)
+	return nil
 }
 
 // UploadAvatar uploads a new avatar and updates the user record.
@@ -109,11 +133,9 @@ func hasAvatar(user *domain.User) bool {
 	return user.AvatarUrl != nil && *user.AvatarUrl != ""
 }
 
-// hashPassword hashes a password using bcrypt.
-func hashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
+// revokeSessions ends the user's sessions (best-effort: auth also rejects inactive users).
+func (s *UserService) revokeSessions(ctx context.Context, uid uuid.UUID) {
+	if s.sessions != nil {
+		_ = s.sessions.RevokeUserSessions(ctx, uid)
 	}
-	return string(hash), nil
 }

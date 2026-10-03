@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,6 +31,24 @@ type User struct {
 // IsActive checks if the user is active.
 func (u *User) IsActive() bool {
 	return u.Status == UserStatusActive
+}
+
+// NormalizeEmail trims and lowercases email; users are stored and looked up this way.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// Credentials is the login view of a user, kept apart from User so the hash never reaches responses.
+type Credentials struct {
+	ID           int64
+	Uuid         uuid.UUID
+	PasswordHash string
+	Status       int16
+}
+
+// SessionRevoker ends a user's login sessions; implemented by the auth feature.
+type SessionRevoker interface {
+	RevokeUserSessions(ctx context.Context, uid uuid.UUID) error
 }
 
 // CreateUserInput holds data for creating a user.
@@ -63,6 +82,7 @@ type UserRepository interface {
 	Create(ctx context.Context, input CreateUserInput, passwordHash string) (*User, error)
 	GetByUUID(ctx context.Context, uid uuid.UUID) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetCredentialsByEmail(ctx context.Context, email string) (*Credentials, error)
 	List(ctx context.Context, filter UserListFilter) ([]*User, int64, error)
 	Update(ctx context.Context, uid uuid.UUID, input UpdateUserInput) (*User, error)
 	Delete(ctx context.Context, uid uuid.UUID) error
@@ -72,6 +92,7 @@ type UserRepository interface {
 type UserService interface {
 	CreateUser(ctx context.Context, input CreateUserInput) (*User, error)
 	GetUser(ctx context.Context, uid uuid.UUID) (*User, error)
+	GetCredentialsByEmail(ctx context.Context, email string) (*Credentials, error)
 	GetUsers(ctx context.Context, filter UserListFilter) ([]*User, int64, error)
 	UpdateUser(ctx context.Context, uid uuid.UUID, input UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, uid uuid.UUID) error

@@ -17,6 +17,7 @@ If you're new here, read this file top to bottom once, then use it as a map back
 |---|---|---|---|
 | **Docker Desktop** (Docker + Docker Compose) | Running the app, Postgres, and every other service — the primary, supported way to run this project | `brew install --cask docker`, or download from [docker.com](https://www.docker.com/products/docker-desktop/) | Download from [docker.com](https://www.docker.com/products/docker-desktop/) (the installer sets up the required WSL2 backend), or `winget install Docker.DockerDesktop` |
 | **[`golang-migrate`](https://github.com/golang-migrate/migrate) CLI** | `make migrate-*` — applying database migrations, part of the Quick start below. It always runs from your host, pointed at the Postgres port the dev/prod stack exposes | `brew install golang-migrate` | `scoop install migrate` (needs [Scoop](https://scoop.sh) — see below if you don't have it) |
+| **`psql`** (PostgreSQL client) | `make migrate-up` / `make migrate-functions` / `make db-seed` — applying SQL functions and seeding the demo accounts. Only the client is needed; Postgres itself runs in Docker | `brew install libpq && brew link --force libpq` | `scoop install postgresql` (includes `psql`), or the [PostgreSQL installer](https://www.postgresql.org/download/windows/) with only "Command Line Tools" selected |
 | **[`sqlc`](https://sqlc.dev)** | `make sqlc` — regenerating `internal/database/sqlc` after you change a query. Not needed just to run the app — only if you touch `internal/database/queries` | `brew install sqlc` | Download the Windows binary from the [sqlc releases page](https://github.com/sqlc-dev/sqlc/releases) |
 
 Windows without [Scoop](https://scoop.sh) yet: install it first, in a regular (non-admin)
@@ -27,8 +28,8 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
 ```
 
-After installing, run `make app-init` — it re-checks whether `migrate` and `sqlc` are on your
-`PATH` and prints the exact install command if either is missing.
+After installing, run `make app-init` — it re-checks whether `migrate`, `psql` and `sqlc` are on
+your `PATH` and prints the exact install command if any is missing.
 
 ---
 
@@ -40,7 +41,7 @@ jungo     → the application that assembles them into a runnable API
 ```
 
 - **`junkit`** packages know nothing about each other beyond a few explicit extension points
-  (see [4 Core vs. Optional](#4-core-vs-optional-packages)). Each one compiles and is useful on
+  (see [5 Core vs. Optional](#5-core-vs-optional-packages)). Each one compiles and is useful on
   its own, and is documented via GoDoc comments in its own source — this app is what actually
   wires them together.
 - **`jungo`** (this module) is the "composition root": it reads environment variables
@@ -63,7 +64,7 @@ Docker.)
 ```bash
 make app-init              # interactive: app name, db name/user/pass, ports — creates .env
 make app-dev-bg            # builds and starts App + PostgreSQL, detached
-make migrate-up            # applies internal/database/migrations
+make migrate-up            # applies migrations; in development also seeds demo accounts
 ```
 
 The API is now listening on `http://localhost:<API_SERVER_PORT>` (`8080` unless you changed it in
@@ -73,12 +74,25 @@ The API is now listening on `http://localhost:<API_SERVER_PORT>` (`8080` unless 
 # health check
 curl http://localhost:<API_SERVER_PORT>/health
 
-# create a user (replace <API_KEY> with the value app-init generated in your .env)
-curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/users \
-  -H "Authorization: Bearer <API_KEY>" \
+# log in with a seeded demo account, then call protected routes with the access token
+curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"jane@example.com","password":"Secret@12345","first_name":"Jane","last_name":"Doe"}'
+  -d '{
+    "email": "admin@jungo.com",
+    "password": "Password@123"
+  }'
+
+curl http://localhost:<API_SERVER_PORT>/api/v1/users \
+  -H "Authorization: Bearer <access_token>"
 ```
+
+Every `/api/v1/users` route requires a logged-in user — see [3 Authentication](#3-authentication).
+
+**Demo accounts** (seeded by `make migrate-up` only when `API_ENVIRONMENT=development`), all with
+password `Password@123`: `admin@jungo.com`, `manager@jungo.com`, `member@jungo.com`,
+`user@jungo.com`. They are plain users for now — the names only anticipate future roles.
+Re-seed any time with `make db-seed` (existing emails are skipped). Outside development, create the
+first user with `make console CMD="user:create" ARGS="-email=... -first-name=... -last-name=..."`.
 
 Other useful commands (see `Makefile` for the full list, or run `make help`):
 
@@ -90,8 +104,9 @@ Other useful commands (see `Makefile` for the full list, or run `make help`):
 | `make app-dev WITH=full` | Start every optional service (Redis, Mailpit) |
 | `make app-logs` | Follow the app container's logs |
 | `make app-dev-down` | Stop and remove the dev stack |
-| `make console CMD="user:list"` | Run a registered CLI command inside the running stack — see [11 Console commands](#11-console-commands) |
+| `make console CMD="user:list"` | Run a registered CLI command inside the running stack — see [12 Console commands](#12-console-commands) |
 | `make migrate-create NAME=add_x` | Scaffold a new migration |
+| `make db-seed` | Apply `internal/database/seeders/*.sql` (demo data, never in production) |
 | `make sqlc` | Regenerate `internal/database/sqlc` from `internal/database/queries` |
 | `make test` / `make vet` / `make fmt` | Standard Go checks |
 
@@ -107,7 +122,7 @@ Append `?t_debug=<TRACER_DEBUG_VALUE>` (see `TRACER_DEBUG_KEY` / `TRACER_DEBUG_V
 dashboard instead of the normal JSON response: request/server info, every SQL statement executed
 (with bound parameters), its actual result rows, and a timeline (waterfall) view breaking the
 request down into `logic` / `external` / `db` spans with their percentage of total time. This is
-the `tracer` package — see [6](#6-package-tour-junkit) for the package and [7](#tracer) for how to
+the `tracer` package — see [7](#7-package-tour-junkit) for the package and [8](#tracer) for how to
 add your own spans to the timeline.
 
 ```bash
@@ -119,7 +134,230 @@ entirely.
 
 ---
 
-## 3. How a request flows through the app
+## 3. Authentication
+
+`internal/features/auth` logs users in with email + password and issues two tokens:
+
+| Token | Lifetime | Used for |
+|---|---|---|
+| **Access token** | 15 minutes | Every protected request: `Authorization: Bearer <access_token>` |
+| **Refresh token** | 30 days | Only `POST /auth/refresh`, to get a new pair when the access token expires |
+
+Both belong to one **session** (one login on one device). Tokens are opaque strings (not JWTs):
+only their hash is stored, so a leaked database does not leak usable tokens.
+
+### Typical flow
+
+```
+login ──► access + refresh token
+  │
+  ├─► call APIs with the access token
+  │
+  ├─► 401 token_expired? ──► POST /auth/refresh with the refresh token ──► new pair
+  │
+  └─► logout
+```
+
+### Endpoints
+
+| Method | Path | Needs | Purpose |
+|---|---|---|---|
+| `POST` | `/api/v1/auth/login` | — | Log in, get a token pair |
+| `POST` | `/api/v1/auth/refresh` | refresh token (body) | Exchange the refresh token for a new pair |
+| `GET` | `/api/v1/auth/me` | access token | Current user + session info |
+| `GET` | `/api/v1/auth/sessions` | access token | Devices where the user is logged in (`current: true` = this one) |
+| `POST` | `/api/v1/auth/logout` | access token | Log out this device |
+| `POST` | `/api/v1/auth/logout-all` | access token | Log out every device |
+| `POST` | `/api/internal/auth/token-details` | `X-Internal-Secret` | Inspect any token (service-to-service) |
+| `POST` | `/api/internal/auth/revoke` | `X-Internal-Secret` | End the session a token belongs to |
+
+**Login** — send `X-Device-ID` (a stable id per app install/browser) if you can: logging in again from
+the same device reuses its session instead of creating a new one. Without it, IP + User-Agent is used.
+
+```bash
+curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -H "X-Device-ID: iphone-7f3a" \
+  -d '{
+    "email": "admin@jungo.com",
+    "password": "Password@123"
+  }'
+```
+
+Response:
+
+```json
+{
+  "status": "success",
+  "message": "Logged in successfully",
+  "data": {
+    "access_token": "v1.…",
+    "refresh_token": "v1.…",
+    "token_type": "Bearer",
+    "expires_in": 899,
+    "refresh_expires_in": 2591999
+  }
+}
+```
+
+**Call a protected API**
+
+```bash
+curl http://localhost:<API_SERVER_PORT>/api/v1/auth/me \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Refresh** — the refresh token goes in the **body**, never in `Authorization`. Each refresh token
+works **once**; always store the new pair. Reusing an old one ends the session (possible theft).
+
+```bash
+curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "<refresh_token>"
+  }'
+```
+
+**Logout**
+
+```bash
+curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/logout \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Internal endpoints** — for other backend services, never browsers. They need the
+`X-Internal-Secret` header (`AUTH_INTERNAL_SECRET`); when it is unset they answer `403` to everyone.
+
+*Token details* — inspect any token, including expired or revoked ones (e.g. another service
+checking who a token belongs to, or support investigating a session):
+
+```bash
+curl -X POST http://localhost:<API_SERVER_PORT>/api/internal/auth/token-details \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Secret: <AUTH_INTERNAL_SECRET>" \
+  -d '{
+    "token": "<access_or_refresh_token>"
+  }'
+```
+
+Response (`token_status` is `active`, `expired` or `revoked`):
+
+```json
+{
+  "status": "success",
+  "message": "Token details retrieved successfully",
+  "data": {
+    "token_type": "access_token",
+    "token_status": "active",
+    "user": {
+      "uuid": "5b1e…",
+      "email": "admin@jungo.com",
+      "first_name": "Admin",
+      "last_name": "Jungo",
+      "avatar_url": null,
+      "active": true
+    },
+    "session": {
+      "family_uuid": "3f0c…",
+      "ip_address": "113.161.10.5",
+      "user_agent": "Mozilla/5.0 (…)",
+      "device_id": "iphone-7f3a",
+      "created_at": "2026-10-01T08:00:00Z"
+    },
+    "access_token": {
+      "uuid": "9d2a…",
+      "expires_at": "2026-10-03T09:30:00Z",
+      "status": "active"
+    },
+    "refresh_token": {
+      "uuid": "c47e…",
+      "expires_at": "2026-11-02T09:15:00Z",
+      "status": "active"
+    }
+  }
+}
+```
+
+*Revoke* — end the whole session a token belongs to (e.g. an admin tool forcing a device out):
+
+```bash
+curl -X POST http://localhost:<API_SERVER_PORT>/api/internal/auth/revoke \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Secret: <AUTH_INTERNAL_SECRET>" \
+  -d '{
+    "token": "<access_or_refresh_token>"
+  }'
+```
+
+```json
+{
+  "status": "success",
+  "message": "Token revoked successfully"
+}
+```
+
+### Errors clients should handle
+
+Errors look like this:
+
+```json
+{
+  "status": "error",
+  "code": "UNAUTHORIZED",
+  "message": "Token has expired"
+}
+```
+
+| HTTP | `message` | What to do |
+|---|---|---|
+| 401 | Token has expired | Call `/auth/refresh`, then retry the request |
+| 401 | Token has been revoked · Refresh token was already used… · Invalid token | Send the user to the login screen |
+| 401 | Invalid token type | A refresh token was sent as `Bearer`; use the access token |
+| 401 | Invalid email or password (…) | Wrong credentials; the longer variant means the IP is close to being blocked |
+| 403 | Your account is not active | Account disabled |
+| 429 | Too many failed login attempts… · Your IP has been temporarily blocked… | Too many failed logins; wait |
+
+### Protecting your own routes
+
+```go
+// router: inject middleware.Authenticator[*authdomain.Identity] (provided by the auth module)
+group.Use(middleware.BearerAuth(r.authenticator, r.responder, middleware.BearerAuthOptions{}))
+
+// handler: who is calling?
+identity := security.MustGetIdentity[*authdomain.Identity](c)
+```
+
+### Configuration
+
+`make app-init` generates the three secrets. Everything else has sensible defaults.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `AUTH_TOKEN_HMAC_SECRET` | — | Signs tokens. Base64, 32 bytes. Required outside development |
+| `AUTH_TOKEN_ENCRYPTION_KEY` | — | Encrypts tokens. Base64, 32 bytes. Required outside development |
+| `AUTH_INTERNAL_SECRET` | — | `X-Internal-Secret` for `/api/internal/auth/*`; empty disables them |
+| `AUTH_ACCESS_TOKEN_TTL` | `15m` | Access token lifetime |
+| `AUTH_REFRESH_TOKEN_TTL` | `720h` | Refresh token lifetime (how long a user stays logged in without activity) |
+| `AUTH_SESSION_CACHE_TTL` | `3m` | How long a session is cached (Redis only); `0` disables the cache |
+| `AUTH_REVOKED_RETENTION` | `168h` | How long expired/revoked tokens are kept before cleanup (needed to detect reused refresh tokens) |
+| `AUTH_PASSWORD_COST` | `12` | bcrypt cost; +1 doubles the hashing time (12 ≈ 180 ms) |
+| `AUTH_RECAPTCHA_ON_LOGIN` | `false` | Require a reCAPTCHA token on login (`recaptcha_token` in the body) |
+| `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_BLOCK_WINDOW` | `5` / `15m` | Failed logins per IP before a short block |
+| `AUTH_LOGIN_BLACKLIST_ATTEMPTS` / `AUTH_LOGIN_BLACKLIST_WINDOW` | `8` / `24h` | Failed logins per IP before a long block (+ Telegram alert if configured) |
+| `AUTH_LOGIN_EMAIL_MAX_ATTEMPTS` | `10` | Failed logins per email (any IP) within `AUTH_LOGIN_BLOCK_WINDOW` |
+
+### Operations
+
+- **First user**: seeded in development (see [Quick start](#2-quick-start)); elsewhere
+  `make console CMD="user:create" ARGS="-email=... -first-name=... -last-name=..."`.
+- **Cleanup**: run `make console CMD="auth:cleanup-tokens"` daily (cron) to delete old tokens.
+- **Leaked key**: replace both `AUTH_TOKEN_*` keys and restart — every user must log in again.
+- **Several app instances**: enable Redis (`CACHE_ENABLED=true`) so logout and login limits are shared.
+- **Disabling or deleting a user** logs them out of every device immediately.
+
+---
+
+## 4. How a request flows through the app
 
 ```
 cmd/api/main.go
@@ -144,7 +382,7 @@ a rate-limited request never reaches handler code; `Recover` is last so it wraps
 
 ---
 
-## 4. Core vs. optional packages
+## 5. Core vs. optional packages
 
 `internal/app/fx.go` groups `junkit` packages into two tiers:
 
@@ -188,7 +426,7 @@ an enabled `tracer.Debugger` — so this is always safe to leave in place. The s
 
 ---
 
-## 5. Configuration
+## 6. Configuration
 
 All configuration is environment variables, parsed into `internal/config/config.go`'s `Config`
 struct via [`caarlos0/env`](https://github.com/caarlos0/env). Start from `.env.example` — it
@@ -196,7 +434,7 @@ documents every variable inline. Highlights:
 
 | Variable | Purpose |
 |---|---|
-| `API_KEY` | Static Bearer token required by `Authorization: Bearer <key>` on the `user` routes |
+| `AUTH_*` | Login, tokens and brute-force limits — see [3 Authentication](#configuration) |
 | `TRACER_DEBUG_KEY` / `TRACER_DEBUG_VALUE` | Query-param name/value that unlocks the debug dashboard (2) |
 | `DB_*` | Postgres connection + pool tuning |
 | `CACHE_ENABLED` | `cache` package is a no-op unless this is `true` (and Redis is started with `WITH=cache`) |
@@ -219,7 +457,7 @@ feels CPU/memory-starved.
 
 ---
 
-## 6. Package tour (`junkit`)
+## 7. Package tour (`junkit`)
 
 Every package below is documented in full via GoDoc comments in its own source (`../junkit/<pkg>`)
 — this table is just an index. Run `go doc github.com/jungo-dev/junkit/<package>` from this
@@ -243,7 +481,7 @@ API.
 | `recaptcha` | Google reCAPTCHA v3 verification, with a `Mock` verifier for local dev/tests |
 | `tracer` | Request-scoped debug logger — powers the `?t_debug=` dashboard (SQL, results, request/server info) |
 | `middleware` | Gin middleware: CORS, rate limiting, panic recovery, security headers, request tracing, body capture |
-| `scaffold` | Code-generation engine (name-form derivation, templated file writing, Fx registration) behind `cmd/scaffold` — see 8 |
+| `scaffold` | Code-generation engine (name-form derivation, templated file writing, Fx registration) behind `cmd/scaffold` — see 9 |
 
 **Convention:** every package except `pagination`, `middleware`, and `scaffold` exposes a `var
 Module = fx.Module(...)` (or `fx.Provide(...)`) for one-line Fx registration — see how each is
@@ -255,7 +493,7 @@ something the running application imports at all.
 
 ---
 
-## 7. Usage examples
+## 8. Usage examples
 
 One example per package — either lifted directly from this codebase (file path given) or, for
 packages this skeleton doesn't call into anywhere, a minimal standalone snippet. Every package
@@ -519,7 +757,7 @@ directly inside a feature's router.
 
 ---
 
-## 8. Anatomy of the sample feature (`user`)
+## 9. Anatomy of the sample feature (`user`)
 
 `internal/features/user` is the template to copy for a new feature. Each layer has one job and
 only depends on the layer below it:
@@ -531,7 +769,7 @@ internal/features/user/
 ├── service/          UserService impl — business logic (bcrypt hashing, avatar upload via storage)
 ├── dto/v1/            request/response structs + converters to/from domain.User
 ├── handler/v1/        thin HTTP layer: bind → call service → respond
-├── router/v1/          registers routes on a *gin.RouterGroup, applies the Auth middleware
+├── router/v1/          registers routes on a *gin.RouterGroup, applies middleware.BearerAuth
 └── module.go          fx.Module wiring the above together + registerTranslations
 ```
 
@@ -571,19 +809,17 @@ then delete the files).
 3. Write the SQL in `internal/database/queries/<feature>.sql` (sqlc-annotated) and either hand-write
    or `make sqlc` a `internal/database/sqlc/<feature>.sql.go`.
 4. Wire the feature's `Module` into `internal/app/fx.go` next to `user.Module`.
-5. If your routes need protecting, apply `middleware.Auth(cfg.APIKey, responder)` in your
-   feature's router, same as `user_router.go` does.
+5. If your routes need protecting, inject `middleware.Authenticator[*authdomain.Identity]` into
+   your router and apply `middleware.BearerAuth(authenticator, responder, middleware.BearerAuthOptions{})`,
+   same as `user_router.go` does. Read the caller with `security.MustGetIdentity[*authdomain.Identity](c)`.
 
 ### Auth
 
-Routes under `user` are protected by `internal/middleware/auth.go` — a static, shared-secret
-Bearer token checked with `crypto/subtle.ConstantTimeCompare` (timing-safe). This is intentionally
-simple (no sessions, no per-user tokens); swap in real auth (JWT, OAuth, sessions) by replacing
-this one middleware without touching anything else.
+The `auth` feature (login, tokens, sessions) is documented in [3 Authentication](#3-authentication).
 
 ---
 
-## 9. Project layout
+## 10. Project layout
 
 ```
 jungo/
@@ -593,18 +829,17 @@ jungo/
 │   ├── common/          shared helpers for the whole project
 │   ├── config/          env-var → Config struct
 │   ├── router/          global middleware + route collection
-│   ├── middleware/      app-specific middleware (currently just Auth)
-│   ├── database/        migrations, sqlc queries + generated code
-│   └── features/user/   sample feature — see 8
+│   ├── database/        migrations, functions, seeders, sqlc queries + generated code
+│   └── features/        user (sample feature — see 9), auth (see 3)
 └── deploy/              Dockerfile, docker-compose (dev + prod)
 ```
 
 The public [`junkit`](https://github.com/jungo-dev/junkit) module (a normal `go.mod`
-dependency, no local checkout needed) holds every infrastructure package listed in 6.
+dependency, no local checkout needed) holds every infrastructure package listed in 7.
 
 ---
 
-## 10. Requirements
+## 11. Requirements
 
 See [0. Before you start](#0-before-you-start--required-tools) for install instructions (macOS +
 Windows) for everything below.
@@ -613,11 +848,13 @@ Windows) for everything below.
 - Go **1.26.5**, only if running things outside Docker (`go build`, `go test`, etc.)
 - [`golang-migrate`](https://github.com/golang-migrate/migrate) CLI — `make migrate-*` always
   shells out to it from your host
+- `psql` (PostgreSQL client) — `make migrate-up` / `make db-seed` use it to apply SQL functions
+  and seed data
 - [`sqlc`](https://sqlc.dev), only if regenerating `internal/database/sqlc` via `make sqlc`
 
 ---
 
-## 11. Console commands
+## 12. Console commands
 
 Besides the HTTP API, `cmd/console` is a second entrypoint for one-off CLI commands (health
 checks, data backfills, ad-hoc reports) that need the same Fx-wired dependencies (database, cache,
@@ -689,4 +926,4 @@ fx.Provide(
 3. Register it into the `"commands"` group — in `commands.Module` for a global command, or in your
    feature's own `module.go` for a feature-scoped one (same pattern as its routes).
 4. Use `junkit/console`'s `Successf`/`Infof`/`Warnf`/`Fatalf` for terminal output inside `Run` —
-   see the `console` example in [7](#console).
+   see the `console` example in [8](#console).

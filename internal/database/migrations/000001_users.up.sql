@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at    TIMESTAMPTZ,
     deleted_at    TIMESTAMPTZ,
 
-    CONSTRAINT uq_users_uuid UNIQUE (uuid)
+    CONSTRAINT uq_users_uuid UNIQUE (uuid),
+    CONSTRAINT chk_users_email_lowercase CHECK (email = lower(email))
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);

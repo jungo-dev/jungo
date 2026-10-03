@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
@@ -15,6 +17,7 @@ import (
 	"github.com/jungo-dev/junkit/notification"
 	"github.com/jungo-dev/junkit/recaptcha"
 	"github.com/jungo-dev/junkit/response"
+	"github.com/jungo-dev/junkit/security"
 	"github.com/jungo-dev/junkit/storage"
 	"github.com/jungo-dev/junkit/telegram"
 	"github.com/jungo-dev/junkit/tracer"
@@ -23,6 +26,7 @@ import (
 	"jungo/internal/config"
 	"jungo/internal/console"
 	"jungo/internal/console/commands"
+	"jungo/internal/features/auth"
 	"jungo/internal/features/user"
 	"jungo/internal/router"
 )
@@ -63,6 +67,9 @@ func CoreModules(cfg *config.Config) []fx.Option {
 		fx.Provide(provideValidationOptions),
 		validation.Module,
 
+		fx.Provide(provideSecurityOptions),
+		security.Module,
+
 		// =====================================================================
 		// OPTIONAL MODULES & INTEGRATIONS
 		// =====================================================================
@@ -86,6 +93,7 @@ func CoreModules(cfg *config.Config) []fx.Option {
 		// =====================================================================
 		// FEATURES
 		// =====================================================================
+		auth.Module,
 		user.Module,
 
 		// =====================================================================
@@ -182,6 +190,27 @@ func provideResponseOptions(cfg *config.Config) response.Options {
 
 func provideValidationOptions(cfg *config.Config) validation.Options {
 	return validation.Options{Language: cfg.Language}
+}
+
+// provideSecurityOptions builds security.Options from cfg.Auth; development falls back to random keys.
+func provideSecurityOptions(cfg *config.Config, log *zap.Logger) (security.Options, error) {
+	opts := security.Options{Password: security.PasswordOptions{Cost: cfg.Auth.PasswordCost}}
+
+	if cfg.IsDevelopment() && cfg.Auth.TokenHMACSecret == "" && cfg.Auth.TokenEncryptionKey == "" {
+		log.Warn("AUTH_TOKEN_HMAC_SECRET / AUTH_TOKEN_ENCRYPTION_KEY not set: using random keys, tokens will not survive a restart")
+		opts.TokenHMACSecret = security.RandomBytes(security.MinHMACSecretSize)
+		opts.TokenEncryptionKey = security.RandomBytes(security.EncryptionKeySize)
+		return opts, nil
+	}
+
+	var err error
+	if opts.TokenHMACSecret, err = security.DecodeKey(cfg.Auth.TokenHMACSecret); err != nil {
+		return security.Options{}, fmt.Errorf("AUTH_TOKEN_HMAC_SECRET: %w", err)
+	}
+	if opts.TokenEncryptionKey, err = security.DecodeKey(cfg.Auth.TokenEncryptionKey); err != nil {
+		return security.Options{}, fmt.Errorf("AUTH_TOKEN_ENCRYPTION_KEY: %w", err)
+	}
+	return opts, nil
 }
 
 func provideCacheOptions(cfg *config.Config) cache.Options {

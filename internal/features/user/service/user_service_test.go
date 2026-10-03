@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/jungo-dev/junkit/security"
+
 	"jungo/internal/features/user/domain"
 )
 
@@ -19,6 +21,7 @@ type fakeUserRepository struct {
 	CreateFunc     func(ctx context.Context, input domain.CreateUserInput, passwordHash string) (*domain.User, error)
 	GetByUUIDFunc  func(ctx context.Context, uid uuid.UUID) (*domain.User, error)
 	GetByEmailFunc func(ctx context.Context, email string) (*domain.User, error)
+	GetCredsFunc   func(ctx context.Context, email string) (*domain.Credentials, error)
 	ListFunc       func(ctx context.Context, filter domain.UserListFilter) ([]*domain.User, int64, error)
 	UpdateFunc     func(ctx context.Context, uid uuid.UUID, input domain.UpdateUserInput) (*domain.User, error)
 	DeleteFunc     func(ctx context.Context, uid uuid.UUID) error
@@ -34,6 +37,10 @@ func (f *fakeUserRepository) GetByUUID(ctx context.Context, uid uuid.UUID) (*dom
 
 func (f *fakeUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	return f.GetByEmailFunc(ctx, email)
+}
+
+func (f *fakeUserRepository) GetCredentialsByEmail(ctx context.Context, email string) (*domain.Credentials, error) {
+	return f.GetCredsFunc(ctx, email)
 }
 
 func (f *fakeUserRepository) List(ctx context.Context, filter domain.UserListFilter) ([]*domain.User, int64, error) {
@@ -74,6 +81,34 @@ func (f *fakeStorage) DeleteFile(ctx context.Context, fileURL string) error {
 	return nil
 }
 
+// fakeSessionRevoker records which users had their sessions revoked.
+type fakeSessionRevoker struct {
+	revoked []uuid.UUID
+}
+
+func (f *fakeSessionRevoker) RevokeUserSessions(_ context.Context, uid uuid.UUID) error {
+	f.revoked = append(f.revoked, uid)
+	return nil
+}
+
+// newTestUserService builds a UserService with a fast bcrypt hasher and a no-op session revoker.
+func newTestUserService(t *testing.T, repo domain.UserRepository, storage *fakeStorage) *UserService {
+	t.Helper()
+	svc, _ := newTestUserServiceWithRevoker(t, repo, storage)
+	return svc
+}
+
+// newTestUserServiceWithRevoker is newTestUserService that also returns the revoker for assertions.
+func newTestUserServiceWithRevoker(t *testing.T, repo domain.UserRepository, storage *fakeStorage) (*UserService, *fakeSessionRevoker) {
+	t.Helper()
+	hasher, err := security.NewPasswordHasher(security.Options{Password: security.PasswordOptions{Cost: bcrypt.MinCost}})
+	if err != nil {
+		t.Fatalf("NewPasswordHasher: %v", err)
+	}
+	revoker := &fakeSessionRevoker{}
+	return NewUserService(repo, storage, hasher, revoker), revoker
+}
+
 func strPtr(s string) *string { return &s }
 
 func TestUserService_CreateUser(t *testing.T) {
@@ -87,7 +122,7 @@ func TestUserService_CreateUser(t *testing.T) {
 				return &domain.User{Email: input.Email}, nil
 			},
 		}
-		svc := NewUserService(repo, &fakeStorage{})
+		svc := newTestUserService(t, repo, &fakeStorage{})
 
 		input := domain.CreateUserInput{FirstName: "Jane", LastName: "Doe", Email: "jane@example.com", Password: "s3cret-pw"}
 		user, err := svc.CreateUser(context.Background(), input)
@@ -112,7 +147,7 @@ func TestUserService_CreateUser(t *testing.T) {
 				return nil, wantErr
 			},
 		}
-		svc := NewUserService(repo, &fakeStorage{})
+		svc := newTestUserService(t, repo, &fakeStorage{})
 
 		_, err := svc.CreateUser(context.Background(), domain.CreateUserInput{Password: "whatever"})
 		if !errors.Is(err, wantErr) {
@@ -147,7 +182,7 @@ func TestUserService_UploadAvatar(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewUserService(repo, storage)
+		svc := newTestUserService(t, repo, storage)
 
 		user, err := svc.UploadAvatar(context.Background(), userID, domain.AvatarFile{Filename: "me.png"})
 		if err != nil {
@@ -173,7 +208,7 @@ func TestUserService_UploadAvatar(t *testing.T) {
 		storage := &fakeStorage{
 			UploadFileFunc: func(context.Context, string) (string, error) { return "new/avatar.png", nil },
 		}
-		svc := NewUserService(repo, storage)
+		svc := newTestUserService(t, repo, storage)
 
 		if _, err := svc.UploadAvatar(context.Background(), userID, domain.AvatarFile{Filename: "me.png"}); err != nil {
 			t.Fatalf("UploadAvatar() error = %v, want nil", err)
@@ -196,7 +231,7 @@ func TestUserService_UploadAvatar(t *testing.T) {
 		storage := &fakeStorage{
 			UploadFileFunc: func(context.Context, string) (string, error) { return "", errors.New("disk full") },
 		}
-		svc := NewUserService(repo, storage)
+		svc := newTestUserService(t, repo, storage)
 
 		_, err := svc.UploadAvatar(context.Background(), userID, domain.AvatarFile{Filename: "me.png"})
 		if !errors.Is(err, domain.ErrInvalidAvatarFile) {
@@ -217,7 +252,7 @@ func TestUserService_UploadAvatar(t *testing.T) {
 		storage := &fakeStorage{
 			UploadFileFunc: func(context.Context, string) (string, error) { return "new/avatar.png", nil },
 		}
-		svc := NewUserService(repo, storage)
+		svc := newTestUserService(t, repo, storage)
 
 		_, err := svc.UploadAvatar(context.Background(), userID, domain.AvatarFile{Filename: "me.png"})
 		if !errors.Is(err, wantErr) {
@@ -234,7 +269,7 @@ func TestUserService_UploadAvatar(t *testing.T) {
 			GetByUUIDFunc: func(context.Context, uuid.UUID) (*domain.User, error) { return nil, wantErr },
 		}
 		storage := &fakeStorage{}
-		svc := NewUserService(repo, storage)
+		svc := newTestUserService(t, repo, storage)
 
 		_, err := svc.UploadAvatar(context.Background(), userID, domain.AvatarFile{Filename: "me.png"})
 		if !errors.Is(err, wantErr) {
@@ -261,7 +296,7 @@ func TestUserService_DeleteAvatar(t *testing.T) {
 			},
 		}
 		storage := &fakeStorage{}
-		svc := NewUserService(repo, storage)
+		svc := newTestUserService(t, repo, storage)
 
 		if _, err := svc.DeleteAvatar(context.Background(), userID); err != nil {
 			t.Fatalf("DeleteAvatar() error = %v, want nil", err)
@@ -285,7 +320,7 @@ func TestUserService_DeleteAvatar(t *testing.T) {
 			},
 		}
 		storage := &fakeStorage{}
-		svc := NewUserService(repo, storage)
+		svc := newTestUserService(t, repo, storage)
 
 		if _, err := svc.DeleteAvatar(context.Background(), userID); err != nil {
 			t.Fatalf("DeleteAvatar() error = %v, want nil", err)
@@ -302,7 +337,7 @@ func TestUserService_DeleteAvatar(t *testing.T) {
 			},
 		}
 		storage := &fakeStorage{}
-		svc := NewUserService(repo, storage)
+		svc := newTestUserService(t, repo, storage)
 
 		if _, err := svc.DeleteAvatar(context.Background(), userID); err != nil {
 			t.Fatalf("DeleteAvatar() error = %v, want nil", err)
@@ -317,7 +352,7 @@ func TestUserService_DeleteAvatar(t *testing.T) {
 		repo := &fakeUserRepository{
 			GetByUUIDFunc: func(context.Context, uuid.UUID) (*domain.User, error) { return nil, wantErr },
 		}
-		svc := NewUserService(repo, &fakeStorage{})
+		svc := newTestUserService(t, repo, &fakeStorage{})
 
 		_, err := svc.DeleteAvatar(context.Background(), userID)
 		if !errors.Is(err, wantErr) {
@@ -337,7 +372,7 @@ func TestUserService_GetUser(t *testing.T) {
 			return want, nil
 		},
 	}
-	svc := NewUserService(repo, &fakeStorage{})
+	svc := newTestUserService(t, repo, &fakeStorage{})
 
 	got, err := svc.GetUser(context.Background(), userID)
 	if err != nil {
@@ -359,7 +394,7 @@ func TestUserService_GetUsers(t *testing.T) {
 			return wantUsers, 1, nil
 		},
 	}
-	svc := NewUserService(repo, &fakeStorage{})
+	svc := newTestUserService(t, repo, &fakeStorage{})
 
 	users, total, err := svc.GetUsers(context.Background(), filter)
 	if err != nil {
@@ -370,10 +405,48 @@ func TestUserService_GetUsers(t *testing.T) {
 	}
 }
 
+func TestUserService_NormalizesEmail(t *testing.T) {
+	t.Run("CreateUser stores the email lowercase and trimmed", func(t *testing.T) {
+		var got string
+		repo := &fakeUserRepository{
+			CreateFunc: func(_ context.Context, input domain.CreateUserInput, _ string) (*domain.User, error) {
+				got = input.Email
+				return &domain.User{Email: input.Email}, nil
+			},
+		}
+		svc := newTestUserService(t, repo, &fakeStorage{})
+
+		if _, err := svc.CreateUser(context.Background(), domain.CreateUserInput{Email: "  Jane.Doe@Example.COM ", Password: "s3cret-pw"}); err != nil {
+			t.Fatal(err)
+		}
+		if got != "jane.doe@example.com" {
+			t.Errorf("stored email = %q, want jane.doe@example.com", got)
+		}
+	})
+
+	t.Run("GetCredentialsByEmail looks up the normalized email", func(t *testing.T) {
+		var got string
+		repo := &fakeUserRepository{
+			GetCredsFunc: func(_ context.Context, email string) (*domain.Credentials, error) {
+				got = email
+				return &domain.Credentials{}, nil
+			},
+		}
+		svc := newTestUserService(t, repo, &fakeStorage{})
+
+		if _, err := svc.GetCredentialsByEmail(context.Background(), "Jane.Doe@Example.COM"); err != nil {
+			t.Fatal(err)
+		}
+		if got != "jane.doe@example.com" {
+			t.Errorf("looked up %q, want jane.doe@example.com", got)
+		}
+	})
+}
+
 func TestUserService_UpdateUser(t *testing.T) {
 	userID := uuid.New()
 	input := domain.UpdateUserInput{FirstName: strPtr("New")}
-	want := &domain.User{Uuid: userID, FirstName: "New"}
+	want := &domain.User{Uuid: userID, FirstName: "New", Status: domain.UserStatusActive}
 	repo := &fakeUserRepository{
 		UpdateFunc: func(_ context.Context, uid uuid.UUID, in domain.UpdateUserInput) (*domain.User, error) {
 			if uid != userID || in.FirstName == nil || *in.FirstName != "New" {
@@ -382,7 +455,7 @@ func TestUserService_UpdateUser(t *testing.T) {
 			return want, nil
 		},
 	}
-	svc := NewUserService(repo, &fakeStorage{})
+	svc, revoker := newTestUserServiceWithRevoker(t, repo, &fakeStorage{})
 
 	got, err := svc.UpdateUser(context.Background(), userID, input)
 	if err != nil {
@@ -391,10 +464,31 @@ func TestUserService_UpdateUser(t *testing.T) {
 	if got != want {
 		t.Errorf("UpdateUser() = %v, want %v", got, want)
 	}
+	if len(revoker.revoked) != 0 {
+		t.Errorf("sessions revoked for an active user: %v", revoker.revoked)
+	}
+}
+
+func TestUserService_UpdateUser_DeactivationRevokesSessions(t *testing.T) {
+	userID := uuid.New()
+	inactive := domain.UserStatusInactive
+	repo := &fakeUserRepository{
+		UpdateFunc: func(context.Context, uuid.UUID, domain.UpdateUserInput) (*domain.User, error) {
+			return &domain.User{Uuid: userID, Status: domain.UserStatusInactive}, nil
+		},
+	}
+	svc, revoker := newTestUserServiceWithRevoker(t, repo, &fakeStorage{})
+
+	if _, err := svc.UpdateUser(context.Background(), userID, domain.UpdateUserInput{Status: &inactive}); err != nil {
+		t.Fatalf("UpdateUser() error = %v, want nil", err)
+	}
+	if len(revoker.revoked) != 1 || revoker.revoked[0] != userID {
+		t.Errorf("revoked = %v, want [%v]", revoker.revoked, userID)
+	}
 }
 
 func TestUserService_DeleteUser(t *testing.T) {
-	t.Run("delegates to the repository", func(t *testing.T) {
+	t.Run("delegates to the repository and revokes the user's sessions", func(t *testing.T) {
 		userID := uuid.New()
 		var gotID uuid.UUID
 		repo := &fakeUserRepository{
@@ -403,13 +497,16 @@ func TestUserService_DeleteUser(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewUserService(repo, &fakeStorage{})
+		svc, revoker := newTestUserServiceWithRevoker(t, repo, &fakeStorage{})
 
 		if err := svc.DeleteUser(context.Background(), userID); err != nil {
 			t.Fatalf("DeleteUser() error = %v, want nil", err)
 		}
 		if gotID != userID {
 			t.Errorf("Delete called with %v, want %v", gotID, userID)
+		}
+		if len(revoker.revoked) != 1 || revoker.revoked[0] != userID {
+			t.Errorf("revoked = %v, want [%v]", revoker.revoked, userID)
 		}
 	})
 
@@ -418,7 +515,7 @@ func TestUserService_DeleteUser(t *testing.T) {
 		repo := &fakeUserRepository{
 			DeleteFunc: func(context.Context, uuid.UUID) error { return wantErr },
 		}
-		svc := NewUserService(repo, &fakeStorage{})
+		svc := newTestUserService(t, repo, &fakeStorage{})
 
 		if err := svc.DeleteUser(context.Background(), uuid.New()); !errors.Is(err, wantErr) {
 			t.Fatalf("DeleteUser() error = %v, want %v", err, wantErr)

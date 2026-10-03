@@ -5,10 +5,32 @@
 package sqlc
 
 import (
+	"net/netip"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+type AuthToken struct {
+	ID     int64     `db:"id" json:"id"`
+	Uuid   uuid.UUID `db:"uuid" json:"uuid"`
+	UserID int64     `db:"user_id" json:"user_id"`
+	// Login session: groups the access/refresh tokens revoked together
+	FamilyUuid uuid.UUID `db:"family_uuid" json:"family_uuid"`
+	// 1 = access token, 2 = refresh token
+	Type int16 `db:"type" json:"type"`
+	// SHA-256 hex of the raw token; the raw token is never stored
+	Hash      string      `db:"hash" json:"hash"`
+	IpAddress *netip.Addr `db:"ip_address" json:"ip_address"`
+	UserAgent *string     `db:"user_agent" json:"user_agent"`
+	DeviceID  *string     `db:"device_id" json:"device_id"`
+	ExpiresAt time.Time   `db:"expires_at" json:"expires_at"`
+	RevokedAt *time.Time  `db:"revoked_at" json:"revoked_at"`
+	// logout | refresh | reuse | rotated | admin | user_disabled
+	RevokedReason *string    `db:"revoked_reason" json:"revoked_reason"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     *time.Time `db:"updated_at" json:"updated_at"`
+}
 
 type User struct {
 	ID           int64      `db:"id" json:"id"`

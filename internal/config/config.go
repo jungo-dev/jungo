@@ -29,7 +29,7 @@ type DatabaseConfig struct {
 type CORSConfig struct {
 	AllowOrigins     []string `env:"CORS_ALLOW_ORIGINS" envDefault:"*"`
 	AllowMethods     []string `env:"CORS_ALLOW_METHODS" envDefault:"GET,POST,PUT,PATCH,DELETE,OPTIONS"`
-	AllowHeaders     []string `env:"CORS_ALLOW_HEADERS" envDefault:"Content-Type,X-API-Key,Authorization"`
+	AllowHeaders     []string `env:"CORS_ALLOW_HEADERS" envDefault:"Content-Type,Authorization,X-Device-ID"`
 	AllowCredentials bool     `env:"CORS_ALLOW_CREDENTIALS" envDefault:"true"`
 	MaxAge           int      `env:"CORS_MAX_AGE" envDefault:"86400"`
 }
@@ -99,6 +99,33 @@ type RecaptchaConfig struct {
 	Mock      bool    `env:"RECAPTCHA_MOCK" envDefault:"true"`
 }
 
+// AuthConfig configures token authentication. Token keys are base64 (`openssl rand -base64 32`).
+type AuthConfig struct {
+	// Changing either key invalidates every issued token (all users must log in again).
+	TokenHMACSecret    string `env:"AUTH_TOKEN_HMAC_SECRET"`
+	TokenEncryptionKey string `env:"AUTH_TOKEN_ENCRYPTION_KEY"`
+
+	AccessTokenTTL  time.Duration `env:"AUTH_ACCESS_TOKEN_TTL" envDefault:"15m"`
+	RefreshTokenTTL time.Duration `env:"AUTH_REFRESH_TOKEN_TTL" envDefault:"720h"`
+	SessionCacheTTL time.Duration `env:"AUTH_SESSION_CACHE_TTL" envDefault:"3m"`
+
+	// RevokedRetention is how long auth:cleanup-tokens keeps expired/revoked tokens.
+	RevokedRetention time.Duration `env:"AUTH_REVOKED_RETENTION" envDefault:"168h"`
+
+	// InternalSecret guards /api/internal/auth/* (empty disables them).
+	InternalSecret string `env:"AUTH_INTERNAL_SECRET"`
+
+	PasswordCost     int  `env:"AUTH_PASSWORD_COST" envDefault:"12"`
+	RecaptchaOnLogin bool `env:"AUTH_RECAPTCHA_ON_LOGIN" envDefault:"false"`
+
+	// Login brute-force protection.
+	LoginMaxAttempts       int64         `env:"AUTH_LOGIN_MAX_ATTEMPTS" envDefault:"5"`
+	LoginBlockWindow       time.Duration `env:"AUTH_LOGIN_BLOCK_WINDOW" envDefault:"15m"`
+	LoginBlacklistAttempts int64         `env:"AUTH_LOGIN_BLACKLIST_ATTEMPTS" envDefault:"8"`
+	LoginBlacklistWindow   time.Duration `env:"AUTH_LOGIN_BLACKLIST_WINDOW" envDefault:"24h"`
+	LoginEmailMaxAttempts  int64         `env:"AUTH_LOGIN_EMAIL_MAX_ATTEMPTS" envDefault:"10"`
+}
+
 // Config holds all configuration settings for the application.
 type Config struct {
 	ServerPort  string `env:"API_SERVER_PORT" envDefault:"8080"`
@@ -107,9 +134,6 @@ type Config struct {
 	Commit      string `env:"API_COMMIT" envDefault:"unknown"`
 	Language    string `env:"API_LANGUAGE" envDefault:"en"`
 	Timezone    string `env:"API_TIMEZONE" envDefault:"UTC"`
-
-	// APIKey is the shared secret for authenticating protected routes.
-	APIKey string `env:"API_KEY" envDefault:"dev-secret-api-key"`
 
 	// Tracer debug dashboard authentication key and value.
 	TracerDebugKey   string `env:"TRACER_DEBUG_KEY" envDefault:"t_debug"`
@@ -124,6 +148,12 @@ type Config struct {
 	Storage   StorageConfig
 	Telegram  TelegramConfig
 	Recaptcha RecaptchaConfig
+	Auth      AuthConfig
+}
+
+// IsDevelopment reports whether the app runs in the development environment.
+func (cfg *Config) IsDevelopment() bool {
+	return cfg.Environment == "development"
 }
 
 var (

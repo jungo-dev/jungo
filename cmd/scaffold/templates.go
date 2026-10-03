@@ -441,6 +441,10 @@ func (f *fake{{.Pascal}}Cache) Exists(ctx context.Context, key string) (bool, er
 	return false, nil
 }
 
+func (f *fake{{.Pascal}}Cache) Incr(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	return 0, nil
+}
+
 func (f *fake{{.Pascal}}Cache) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetchFn func() (*domain.{{.Pascal}}, error)) (*domain.{{.Pascal}}, error) {
 	return fetchFn()
 }

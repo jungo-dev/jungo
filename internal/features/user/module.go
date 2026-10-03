@@ -42,6 +42,13 @@ var Module = fx.Module("user",
 	// =============================================================================
 	fx.Provide(
 		fx.Annotate(
+			command.NewCreateUserCommand,
+			fx.As(new(console.Command)),
+			fx.ResultTags(`group:"commands"`),
+		),
+	),
+	fx.Provide(
+		fx.Annotate(
 			command.NewListUsersCommand,
 			fx.As(new(console.Command)),
 			fx.ResultTags(`group:"commands"`),

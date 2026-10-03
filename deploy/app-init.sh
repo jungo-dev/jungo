@@ -116,6 +116,27 @@ gen_secret() {
 	echo "$secret"
 }
 
+gen_key() {
+	local key
+	if key=$(openssl rand -base64 32 2>/dev/null) && [ -n "$key" ]; then
+		echo "$key"
+		return
+	fi
+	if [ -r /dev/urandom ] && command -v base64 >/dev/null 2>&1; then
+		if key=$(head -c 32 /dev/urandom | base64 | tr -d '\n') && [ -n "$key" ]; then
+			echo "$key"
+			return
+		fi
+	fi
+	# Pure-bash fallback: 43 base64url characters decode to 32 bytes.
+	local alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" i
+	key=""
+	for ((i = 0; i < 43; i++)); do
+		key+=${alphabet:$((RANDOM % 64)):1}
+	done
+	echo "$key"
+}
+
 APP_NAME=$(prompt_app_name "App name (used for docker container/network names)" "jungo")
 DB_NAME=$(prompt "Database name" "jungo")
 DB_USER=$(prompt "Database user" "postgres")
@@ -129,7 +150,10 @@ while true; do
 	fi
 	break
 done
-API_KEY=$(gen_secret)
+
+AUTH_TOKEN_HMAC_SECRET=$(gen_key)
+AUTH_TOKEN_ENCRYPTION_KEY=$(gen_key)
+AUTH_INTERNAL_SECRET=$(gen_secret)
 TRACER_DEBUG_VALUE=$(printf '%04d' $((RANDOM % 10000)))
 
 cleanup_on_failure() {
@@ -155,7 +179,9 @@ set_env "DB_USER" "$DB_USER"
 set_env "DB_PASSWORD" "$DB_PASSWORD"
 set_env "API_SERVER_PORT" "$API_SERVER_PORT"
 set_env "DB_HOST_PORT" "$DB_HOST_PORT"
-set_env "API_KEY" "$API_KEY"
+set_env "AUTH_TOKEN_HMAC_SECRET" "$AUTH_TOKEN_HMAC_SECRET"
+set_env "AUTH_TOKEN_ENCRYPTION_KEY" "$AUTH_TOKEN_ENCRYPTION_KEY"
+set_env "AUTH_INTERNAL_SECRET" "$AUTH_INTERNAL_SECRET"
 set_env "TRACER_DEBUG_VALUE" "$TRACER_DEBUG_VALUE"
 set_env "STORAGE_BASE_URL" "http://localhost:${API_SERVER_PORT}/uploads"
 rm -f .env.bak
@@ -168,7 +194,7 @@ echo "  DB_NAME=$DB_NAME"
 echo "  DB_USER=$DB_USER"
 echo "  API_SERVER_PORT=$API_SERVER_PORT"
 echo "  DB_HOST_PORT=$DB_HOST_PORT"
-echo "  API_KEY=$API_KEY"
+echo "  AUTH_TOKEN_* / AUTH_INTERNAL_SECRET generated (see .env)"
 echo "  TRACER_DEBUG_VALUE=$TRACER_DEBUG_VALUE"
 check_tool() {
 	local name="$1" install_cmd="$2"
@@ -181,9 +207,10 @@ check_tool() {
 
 echo "${CYAN}== CLI tools (needed for migrate-* / sqlc make targets) ==${RESET}"
 check_tool "migrate" "go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest"
+check_tool "psql" "brew install libpq && brew link --force libpq (Windows: scoop install postgresql)"
 check_tool "sqlc" "go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest"
 
 echo ""
 echo "${BOLD}Next:${RESET}"
 echo "  make app-dev-bg   # builds and starts App + PostgreSQL, detached"
-echo "  make migrate-up   # applies internal/database/migrations"
+echo "  make migrate-up   # applies migrations + seeds demo accounts (admin@jungo.com / Password@123)"
