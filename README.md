@@ -80,6 +80,24 @@ make migrate-up            # applies migrations; in development also seeds demo 
 That's it. The API is now listening on `http://localhost:<API_SERVER_PORT>` (`8080` unless you
 changed it in `make app-init`).
 
+> **⏳ The very first start takes about a minute — that's normal.**
+>
+> On a fresh clone the container has nothing cached yet, so before the API can answer it has to
+> download every Go module and compile the whole app. Until that finishes, `curl` will hang or
+> get "connection refused".
+>
+> To see when it's ready, follow the logs:
+>
+> ```bash
+> make app-logs
+> ```
+>
+> Wait for a line containing **`server starting`** — from then on the API responds normally.
+>
+> This only happens once. The downloaded modules and build cache are kept in Docker volumes, so
+> later starts take a few seconds and hot reload rebuilds only what you changed. It becomes slow
+> again only if you delete those volumes (e.g. `docker compose down -v`).
+
 Hot reload is enabled in dev (via [Air](https://github.com/air-verse/air)): edit any `.go` file
 in this repo and the app restarts automatically.
 
@@ -201,7 +219,7 @@ Both files fall back to sane defaults, so you only need these to override:
 | Variable | Purpose | Dev default | Prod default |
 |---|---|---|---|
 | `APP_MEM_LIMIT` | Hard memory cap on the `app` container | `1024M` | `2048M` |
-| `APP_CPU_LIMIT` | Hard CPU cap on the `app` container | `1.0` | `2.0` |
+| `APP_CPU_LIMIT` | Hard CPU cap on the `app` container | `2.0` | `2.0` |
 | `APP_GOMEMLIMIT` | Go's soft memory limit ([`GOMEMLIMIT`](https://pkg.go.dev/runtime#hdr-Environment_Variables)) — lets the GC back off before hitting the hard cap above instead of getting OOM-killed. Keep it ~90% of `APP_MEM_LIMIT` | `900MiB` | `1800MiB` |
 
 Lower-spec dev machines rarely need to touch these; raise them if the first build or hot-reload
