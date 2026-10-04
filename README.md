@@ -5,20 +5,52 @@ A minimal Go web application skeleton built on [Gin](https://github.com/gin-goni
 infrastructure packages, [`junkit`](https://github.com/jungo-dev/junkit) — a public module pulled
 in as a normal versioned dependency in `go.mod` (not a local sibling checkout).
 
-If you're new here, read this file top to bottom once, then use it as a map back into the code.
+**New here?** Follow sections 1 → 3 to get the API running and make your first request (about 10
+minutes). Read the rest when you need it — Part II explains how the code is organized, Part III is
+a reference for the `junkit` packages.
+
+## Table of contents
+
+**Part I — Get it running**
+
+1. [Install the required tools](#1-install-the-required-tools)
+2. [Quick start](#2-quick-start)
+3. [Try the API](#3-try-the-api)
+4. [Everyday commands](#4-everyday-commands)
+5. [Configuration](#5-configuration)
+6. [Authentication](#6-authentication)
+7. [Live debug dashboard](#7-live-debug-dashboard)
+8. [Console commands](#8-console-commands)
+
+**Part II — Understand and extend the code**
+
+9. [Mental model](#9-mental-model)
+10. [Project layout](#10-project-layout)
+11. [How a request flows through the app](#11-how-a-request-flows-through-the-app)
+12. [Anatomy of the sample feature (`user`)](#12-anatomy-of-the-sample-feature-user)
+13. [Adding a new feature](#13-adding-a-new-feature)
+14. [Adding a new console command](#14-adding-a-new-console-command)
+
+**Part III — `junkit` reference**
+
+15. [Core vs. optional packages](#15-core-vs-optional-packages)
+16. [Package tour](#16-package-tour)
+17. [Usage examples](#17-usage-examples)
 
 ---
 
-## 0. Before you start — required tools
+# Part I — Get it running
+
+## 1. Install the required tools
 
 **This project will not run without these installed first.**
 
 | Tool | Needed for | macOS | Windows |
 |---|---|---|---|
 | **Docker Desktop** (Docker + Docker Compose) | Running the app, Postgres, and every other service — the primary, supported way to run this project | `brew install --cask docker`, or download from [docker.com](https://www.docker.com/products/docker-desktop/) | Download from [docker.com](https://www.docker.com/products/docker-desktop/) (the installer sets up the required WSL2 backend), or `winget install Docker.DockerDesktop` |
-| **[`golang-migrate`](https://github.com/golang-migrate/migrate) CLI** | `make migrate-*` — applying database migrations, part of the Quick start below. It always runs from your host, pointed at the Postgres port the dev/prod stack exposes | `brew install golang-migrate` | `scoop install migrate` (needs [Scoop](https://scoop.sh) — see below if you don't have it) |
-| **`psql`** (PostgreSQL client) | `make migrate-up` / `make migrate-functions` / `make db-seed` — applying SQL functions and seeding the demo accounts. Only the client is needed; Postgres itself runs in Docker | `brew install libpq && brew link --force libpq` | `scoop install postgresql` (includes `psql`), or the [PostgreSQL installer](https://www.postgresql.org/download/windows/) with only "Command Line Tools" selected |
-| **[`sqlc`](https://sqlc.dev)** | `make sqlc` — regenerating `internal/database/sqlc` after you change a query. Not needed just to run the app — only if you touch `internal/database/queries` | `brew install sqlc` | Download the Windows binary from the [sqlc releases page](https://github.com/sqlc-dev/sqlc/releases) |
+| **[`golang-migrate`](https://github.com/golang-migrate/migrate) CLI** | `make migrate-*` — applying database migrations. It always runs from your host, pointed at the Postgres port the dev/prod stack exposes | `brew install golang-migrate` | `scoop install migrate` (needs [Scoop](https://scoop.sh) — see below) |
+| **[`sqlc`](https://sqlc.dev)** *(optional)* | `make sqlc` — regenerating `internal/database/sqlc` after you change a query. Not needed just to run the app | `brew install sqlc` | Download the Windows binary from the [sqlc releases page](https://github.com/sqlc-dev/sqlc/releases) |
+| **Go 1.26.5** *(optional)* | Only if you run things outside Docker (`go build`, `go test`, `go run ./cmd/console`, ...) | `brew install go` | [go.dev/dl](https://go.dev/dl/) |
 
 Windows without [Scoop](https://scoop.sh) yet: install it first, in a regular (non-admin)
 PowerShell terminal, then run `scoop install migrate` as above.
@@ -28,38 +60,15 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
 ```
 
-After installing, run `make app-init` — it re-checks whether `migrate`, `psql` and `sqlc` are on
-your `PATH` and prints the exact install command if any is missing.
-
----
-
-## 1. Mental model
-
-```
-junkit    → the reusable library of infrastructure packages
-jungo     → the application that assembles them into a runnable API
-```
-
-- **`junkit`** packages know nothing about each other beyond a few explicit extension points
-  (see [5 Core vs. Optional](#5-core-vs-optional-packages)). Each one compiles and is useful on
-  its own, and is documented via GoDoc comments in its own source — this app is what actually
-  wires them together.
-- **`jungo`** (this module) is the "composition root": it reads environment variables
-  into a `Config` struct, turns that into each `junkit` package's `Options`, and hands everything
-  to Fx to wire together. Adding a feature means writing a small, self-contained module and
-  registering it — nothing else needs to change.
-
-The `user` feature under `internal/features/user` isn't meant to be a real product feature — it's
-a worked example. Copy its shape when you build your own features.
+Not sure everything is installed? `make app-init` (next step) re-checks whether `migrate`
+and `sqlc` are on your `PATH` and prints the exact install command if any is missing.
 
 ---
 
 ## 2. Quick start
 
-Requirements: Docker + Docker Compose. (Go 1.26.5 locally too, if you want to run things outside
-Docker.)
-
-`junkit` is a public module, so the Docker build fetches it straight from the Go module proxy
+`junkit` is a public module, so the Docker build fetches it straight from the Go module proxy —
+no extra checkout needed.
 
 ```bash
 make app-init              # interactive: app name, db name/user/pass, ports — creates .env
@@ -67,14 +76,21 @@ make app-dev-bg            # builds and starts App + PostgreSQL, detached
 make migrate-up            # applies migrations; in development also seeds demo accounts
 ```
 
-The API is now listening on `http://localhost:<API_SERVER_PORT>` (`8080` unless you changed it in
-`make app-init`).
+That's it. The API is now listening on `http://localhost:<API_SERVER_PORT>` (`8080` unless you
+changed it in `make app-init`).
+
+Hot reload is enabled in dev (via [Air](https://github.com/air-verse/air)): edit any `.go` file
+in this repo and the app restarts automatically.
+
+---
+
+## 3. Try the API
 
 ```bash
-# health check
+# 1. health check
 curl http://localhost:<API_SERVER_PORT>/health
 
-# log in with a seeded demo account, then call protected routes with the access token
+# 2. log in with a seeded demo account — copy "access_token" from the response
 curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
@@ -82,59 +98,117 @@ curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/login \
     "password": "Password@123"
   }'
 
+# 3. call a protected route with that access token
 curl http://localhost:<API_SERVER_PORT>/api/v1/users \
   -H "Authorization: Bearer <access_token>"
 ```
 
-Every `/api/v1/users` route requires a logged-in user — see [3 Authentication](#3-authentication).
+Every `/api/v1/users` route requires a logged-in user — see [6 Authentication](#6-authentication)
+for the full login / refresh / logout flow.
 
-**Demo accounts** (seeded by `make migrate-up` only when `API_ENVIRONMENT=development`), all with
-password `Password@123`: `admin@jungo.com`, `manager@jungo.com`, `member@jungo.com`,
-`user@jungo.com`. They are plain users for now — the names only anticipate future roles.
-Re-seed any time with `make db-seed` (existing emails are skipped). Outside development, create the
-first user with `make console CMD="user:create" ARGS="-email=... -first-name=... -last-name=..."`.
+### Demo accounts
 
-Other useful commands (see `Makefile` for the full list, or run `make help`):
+Seeded by `make migrate-up` **only when `API_ENVIRONMENT=development`**. All use the password
+`Password@123`:
+
+- `admin@jungo.com`
+- `manager@jungo.com`
+- `member@jungo.com`
+- `user@jungo.com`
+
+They are plain users for now — the names only anticipate future roles. Re-seed any time with
+`make db-seed` (existing emails are skipped).
+
+Outside development, create the first user with:
+
+```bash
+make console CMD="user:create" ARGS="-email=... -first-name=... -last-name=..."
+```
+
+---
+
+## 4. Everyday commands
+
+Run `make help` for the full list.
+
+**Running the app**
 
 | Command | What it does |
 |---|---|
 | `make app-init` | Interactively create `.env` for a fresh clone (app name, db, ports) |
-| `make app-dev` | Same as above, but attached (streams logs, Ctrl+C to stop) |
+| `make app-dev-bg` | Build and start the dev stack (App + PostgreSQL), detached |
+| `make app-dev` | Same, but attached (streams logs, Ctrl+C to stop) |
 | `make app-dev WITH=cache` | Also start Redis and enable the `cache` package |
 | `make app-dev WITH=full` | Start every optional service (Redis, Mailpit) |
 | `make app-logs` | Follow the app container's logs |
 | `make app-dev-down` | Stop and remove the dev stack |
-| `make console CMD="user:list"` | Run a registered CLI command inside the running stack — see [12 Console commands](#12-console-commands) |
+| `make app-prod` / `make app-prod-bg` / `make app-prod-down` | Same as above, for the prod stack |
+
+**Database**
+
+| Command | What it does |
+|---|---|
+| `make migrate-up` | Apply pending migrations + SQL functions (+ demo data in development) |
+| `make migrate-down` | Roll back the last migration |
+| `make migrate-refresh` | Drop everything and re-run all migrations (**destroys data**) |
 | `make migrate-create NAME=add_x` | Scaffold a new migration |
 | `make db-seed` | Apply `internal/database/seeders/*.sql` (demo data, never in production) |
 | `make sqlc` | Regenerate `internal/database/sqlc` from `internal/database/queries` |
-| `make test` / `make vet` / `make fmt` | Standard Go checks |
 
-Hot reload is enabled in dev (via [Air](https://github.com/air-verse/air)) and watches this
-module's source. `junkit` is fetched as a pinned dependency at build time, not mounted live — to
-pick up a `junkit` change, publish a new tag in that repo, bump the version in `go.mod`
-(`go get github.com/jungo-dev/junkit@vX.Y.Z`), and rebuild.
+**Code generation & tooling**
 
-### Live debug dashboard
+| Command | What it does |
+|---|---|
+| `make feature NAME=product` | Generate a new feature — see [13](#13-adding-a-new-feature) |
+| `make feature-remove NAME=product` | Remove a generated feature |
+| `make command NAME=... SIGNATURE=...` | Generate a new CLI command — see [14](#14-adding-a-new-console-command) |
+| `make console CMD="user:list"` | Run a CLI command inside the running stack — see [8](#8-console-commands) |
+| `make test` / `make vet` / `make fmt` / `make tidy` | Standard Go checks |
 
-Append `?t_debug=<TRACER_DEBUG_VALUE>` (see `TRACER_DEBUG_KEY` / `TRACER_DEBUG_VALUE` in your
-`.env` — `app-init` randomizes this per clone) to any request to get a pretty-printed debug
-dashboard instead of the normal JSON response: request/server info, every SQL statement executed
-(with bound parameters), its actual result rows, and a timeline (waterfall) view breaking the
-request down into `logic` / `external` / `db` spans with their percentage of total time. This is
-the `tracer` package — see [7](#7-package-tour-junkit) for the package and [8](#tracer) for how to
-add your own spans to the timeline.
+### Updating `junkit`
 
-```bash
-curl "http://localhost:<API_SERVER_PORT>/api/v1/users/<uuid>?t_debug=<TRACER_DEBUG_VALUE>"
-```
-
-Never enable this in production — set `TRACER_DEBUG_VALUE` empty to disable the dashboard
-entirely.
+`junkit` is fetched as a pinned dependency at build time, not mounted live — hot reload only
+watches this repo. To pick up a `junkit` change: publish a new tag in that repo, bump the version
+here (`go get github.com/jungo-dev/junkit@vX.Y.Z`), and rebuild.
 
 ---
 
-## 3. Authentication
+## 5. Configuration
+
+All configuration is environment variables in `.env` (created by `make app-init`), parsed into
+`internal/config/config.go`'s `Config` struct via [`caarlos0/env`](https://github.com/caarlos0/env).
+`.env.example` documents every variable inline. Highlights:
+
+| Variable | Purpose |
+|---|---|
+| `API_ENVIRONMENT` | `development` enables demo seeding and dev-friendly defaults |
+| `API_SERVER_PORT` | Port the API listens on (default `8080`) |
+| `DB_*` | Postgres connection + pool tuning |
+| `AUTH_*` | Login, tokens and brute-force limits — see [Authentication › Configuration](#authentication-configuration) |
+| `TRACER_DEBUG_KEY` / `TRACER_DEBUG_VALUE` | Query-param name/value that unlocks the [debug dashboard](#7-live-debug-dashboard) |
+| `CACHE_ENABLED` | `cache` package is a no-op unless this is `true` (and Redis is started with `WITH=cache`) |
+| `STORAGE_BASE_DIR` / `STORAGE_BASE_URL` | Where uploaded avatars are stored and served from |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Ops alerts for panics/rate-limit breaches; empty = safe no-op |
+| `RECAPTCHA_MOCK` | Verifier always succeeds when true (default outside production) |
+
+### Container resource limits
+
+Three more variables aren't part of `Config` — they're read directly by
+`deploy/docker-compose.dev.yaml` / `docker-compose.yaml` to cap the `app` container's resources.
+Both files fall back to sane defaults, so you only need these to override:
+
+| Variable | Purpose | Dev default | Prod default |
+|---|---|---|---|
+| `APP_MEM_LIMIT` | Hard memory cap on the `app` container | `1024M` | `2048M` |
+| `APP_CPU_LIMIT` | Hard CPU cap on the `app` container | `1.0` | `2.0` |
+| `APP_GOMEMLIMIT` | Go's soft memory limit ([`GOMEMLIMIT`](https://pkg.go.dev/runtime#hdr-Environment_Variables)) — lets the GC back off before hitting the hard cap above instead of getting OOM-killed. Keep it ~90% of `APP_MEM_LIMIT` | `900MiB` | `1800MiB` |
+
+Lower-spec dev machines rarely need to touch these; raise them if the first build or hot-reload
+feels CPU/memory-starved.
+
+---
+
+## 6. Authentication
 
 `internal/features/auth` logs users in with email + password and issues two tokens:
 
@@ -171,8 +245,10 @@ login ──► access + refresh token
 | `POST` | `/api/internal/auth/token-details` | `X-Internal-Secret` | Inspect any token (service-to-service) |
 | `POST` | `/api/internal/auth/revoke` | `X-Internal-Secret` | End the session a token belongs to |
 
-**Login** — send `X-Device-ID` (a stable id per app install/browser) if you can: logging in again from
-the same device reuses its session instead of creating a new one. Without it, IP + User-Agent is used.
+### Login
+
+Send `X-Device-ID` (a stable id per app install/browser) if you can: logging in again from the
+same device reuses its session instead of creating a new one. Without it, IP + User-Agent is used.
 
 ```bash
 curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/login \
@@ -200,15 +276,17 @@ Response:
 }
 ```
 
-**Call a protected API**
+### Call a protected API
 
 ```bash
 curl http://localhost:<API_SERVER_PORT>/api/v1/auth/me \
   -H "Authorization: Bearer <access_token>"
 ```
 
-**Refresh** — the refresh token goes in the **body**, never in `Authorization`. Each refresh token
-works **once**; always store the new pair. Reusing an old one ends the session (possible theft).
+### Refresh
+
+The refresh token goes in the **body**, never in `Authorization`. Each refresh token works
+**once**; always store the new pair. Reusing an old one ends the session (possible theft).
 
 ```bash
 curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/refresh \
@@ -218,17 +296,40 @@ curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/refresh \
   }'
 ```
 
-**Logout**
+### Logout
 
 ```bash
 curl -X POST http://localhost:<API_SERVER_PORT>/api/v1/auth/logout \
   -H "Authorization: Bearer <access_token>"
 ```
 
-**Internal endpoints** — for other backend services, never browsers. They need the
-`X-Internal-Secret` header (`AUTH_INTERNAL_SECRET`); when it is unset they answer `403` to everyone.
+### Errors clients should handle
 
-*Token details* — inspect any token, including expired or revoked ones (e.g. another service
+Errors look like this:
+
+```json
+{
+  "status": "error",
+  "code": "UNAUTHORIZED",
+  "message": "Token has expired"
+}
+```
+
+| HTTP | `message` | What to do |
+|---|---|---|
+| 401 | Token has expired | Call `/auth/refresh`, then retry the request |
+| 401 | Token has been revoked · Refresh token was already used… · Invalid token | Send the user to the login screen |
+| 401 | Invalid token type | A refresh token was sent as `Bearer`; use the access token |
+| 401 | Invalid email or password (…) | Wrong credentials; the longer variant means the IP is close to being blocked |
+| 403 | Your account is not active | Account disabled |
+| 429 | Too many failed login attempts… · Your IP has been temporarily blocked… | Too many failed logins; wait |
+
+### Internal endpoints (service-to-service)
+
+For other backend services, never browsers. They need the `X-Internal-Secret` header
+(`AUTH_INTERNAL_SECRET`); when it is unset they answer `403` to everyone.
+
+**Token details** — inspect any token, including expired or revoked ones (e.g. another service
 checking who a token belongs to, or support investigating a session):
 
 ```bash
@@ -278,7 +379,7 @@ Response (`token_status` is `active`, `expired` or `revoked`):
 }
 ```
 
-*Revoke* — end the whole session a token belongs to (e.g. an admin tool forcing a device out):
+**Revoke** — end the whole session a token belongs to (e.g. an admin tool forcing a device out):
 
 ```bash
 curl -X POST http://localhost:<API_SERVER_PORT>/api/internal/auth/revoke \
@@ -296,37 +397,7 @@ curl -X POST http://localhost:<API_SERVER_PORT>/api/internal/auth/revoke \
 }
 ```
 
-### Errors clients should handle
-
-Errors look like this:
-
-```json
-{
-  "status": "error",
-  "code": "UNAUTHORIZED",
-  "message": "Token has expired"
-}
-```
-
-| HTTP | `message` | What to do |
-|---|---|---|
-| 401 | Token has expired | Call `/auth/refresh`, then retry the request |
-| 401 | Token has been revoked · Refresh token was already used… · Invalid token | Send the user to the login screen |
-| 401 | Invalid token type | A refresh token was sent as `Bearer`; use the access token |
-| 401 | Invalid email or password (…) | Wrong credentials; the longer variant means the IP is close to being blocked |
-| 403 | Your account is not active | Account disabled |
-| 429 | Too many failed login attempts… · Your IP has been temporarily blocked… | Too many failed logins; wait |
-
-### Protecting your own routes
-
-```go
-// router: inject middleware.Authenticator[*authdomain.Identity] (provided by the auth module)
-group.Use(middleware.BearerAuth(r.authenticator, r.responder, middleware.BearerAuthOptions{}))
-
-// handler: who is calling?
-identity := security.MustGetIdentity[*authdomain.Identity](c)
-```
-
+<a id="authentication-configuration"></a>
 ### Configuration
 
 `make app-init` generates the three secrets. Everything else has sensible defaults.
@@ -348,16 +419,108 @@ identity := security.MustGetIdentity[*authdomain.Identity](c)
 
 ### Operations
 
-- **First user**: seeded in development (see [Quick start](#2-quick-start)); elsewhere
+- **First user**: seeded in development (see [Demo accounts](#demo-accounts)); elsewhere
   `make console CMD="user:create" ARGS="-email=... -first-name=... -last-name=..."`.
 - **Cleanup**: run `make console CMD="auth:cleanup-tokens"` daily (cron) to delete old tokens.
 - **Leaked key**: replace both `AUTH_TOKEN_*` keys and restart — every user must log in again.
 - **Several app instances**: enable Redis (`CACHE_ENABLED=true`) so logout and login limits are shared.
 - **Disabling or deleting a user** logs them out of every device immediately.
 
+To protect your own routes with this auth, see step 5 of [Adding a new feature](#13-adding-a-new-feature).
+
 ---
 
-## 4. How a request flows through the app
+## 7. Live debug dashboard
+
+Append `?t_debug=<TRACER_DEBUG_VALUE>` (see `TRACER_DEBUG_KEY` / `TRACER_DEBUG_VALUE` in your
+`.env` — `app-init` randomizes this per clone) to any request to get a pretty-printed debug
+dashboard instead of the normal JSON response:
+
+- request/server info,
+- every SQL statement executed (with bound parameters) and its actual result rows,
+- a timeline (waterfall) view breaking the request down into `logic` / `external` / `db` spans
+  with their percentage of total time.
+
+```bash
+curl "http://localhost:<API_SERVER_PORT>/api/v1/users/<uuid>?t_debug=<TRACER_DEBUG_VALUE>"
+```
+
+> ⚠️ Never enable this in production — set `TRACER_DEBUG_VALUE` empty to disable the dashboard
+> entirely.
+
+This is powered by the `tracer` package — see [the `tracer` example](#tracer) for how to add your
+own annotations and spans to the timeline.
+
+---
+
+## 8. Console commands
+
+Besides the HTTP API, `cmd/console` is a second entrypoint for one-off CLI commands (health
+checks, data backfills, ad-hoc reports) that need the same dependencies (database, cache,
+services, ...) as the API server, without going through HTTP.
+
+```bash
+make console CMD="health:check"
+make console CMD="user:list"
+make console CMD="user:create" ARGS="-email=... -first-name=... -last-name=..."
+make console CMD="auth:cleanup-tokens"
+go run ./cmd/console health:check   # equivalent, run directly on the host
+```
+
+Running with no command lists every registered signature. To write your own, see
+[14 Adding a new console command](#14-adding-a-new-console-command).
+
+---
+
+# Part II — Understand and extend the code
+
+## 9. Mental model
+
+```
+junkit    → the reusable library of infrastructure packages
+jungo     → the application that assembles them into a runnable API
+```
+
+- **`junkit`** packages know nothing about each other beyond a few explicit extension points
+  (see [15 Core vs. optional](#15-core-vs-optional-packages)). Each one compiles and is useful on
+  its own, and is documented via GoDoc comments in its own source — this app is what actually
+  wires them together.
+- **`jungo`** (this module) is the "composition root": it reads environment variables
+  into a `Config` struct, turns that into each `junkit` package's `Options`, and hands everything
+  to Fx to wire together. Adding a feature means writing a small, self-contained module and
+  registering it — nothing else needs to change.
+
+The `user` feature under `internal/features/user` isn't meant to be a real product feature — it's
+a worked example. Copy its shape when you build your own features.
+
+---
+
+## 10. Project layout
+
+```
+jungo/
+├── cmd/
+│   ├── api/             HTTP API entrypoint (main.go)
+│   ├── console/         CLI commands entrypoint — see 8
+│   └── scaffold/        code generator behind `make feature` / `make command`
+├── internal/
+│   ├── app/             Fx composition root (fx.go, app.go)
+│   ├── common/          shared helpers for the whole project
+│   ├── config/          env-var → Config struct
+│   ├── console/         console command kernel (Command interface, dispatcher, global commands)
+│   ├── router/          global middleware + route collection
+│   ├── database/        migrations, functions, seeders, sqlc queries + generated code
+│   └── features/        user (sample feature — see 12), auth (see 6)
+└── deploy/              Dockerfile, docker-compose (dev + prod)
+```
+
+The public [`junkit`](https://github.com/jungo-dev/junkit) module (a normal `go.mod`
+dependency, no local checkout needed) holds every infrastructure package listed in
+[16](#16-package-tour).
+
+---
+
+## 11. How a request flows through the app
 
 ```
 cmd/api/main.go
@@ -382,7 +545,160 @@ a rate-limited request never reaches handler code; `Recover` is last so it wraps
 
 ---
 
-## 5. Core vs. optional packages
+## 12. Anatomy of the sample feature (`user`)
+
+`internal/features/user` is the template to copy for a new feature. Each layer has one job and
+only depends on the layer below it:
+
+```
+internal/features/user/
+├── domain/           entity + interfaces (UserRepository, UserService) — no Gin, no sqlc, no Fx
+├── repository/       UserRepository impl — talks to Postgres via internal/database/sqlc
+├── service/          UserService impl — business logic (bcrypt hashing, avatar upload via storage)
+├── dto/v1/           request/response structs + converters to/from domain.User
+├── handler/v1/       thin HTTP layer: bind → call service → respond
+├── router/v1/        registers routes on a *gin.RouterGroup, applies middleware.BearerAuth
+├── command/          feature-scoped console commands (e.g. user:list)
+└── module.go         fx.Module wiring the above together + registerTranslations
+```
+
+Routes are collected automatically: any type implementing `router.Routes` (optionally also
+`router.Versioned`) that's provided into the `"routes"` Fx group gets mounted by
+`router.RegisterAll` — `internal/router` never imports feature packages directly.
+
+The `auth` feature (login, tokens, sessions) follows the same shape and is documented from the
+API side in [6 Authentication](#6-authentication).
+
+---
+
+## 13. Adding a new feature
+
+Two ways, from fastest to most hands-on.
+
+### Option A — generate it (recommended)
+
+`cmd/scaffold` is a code generator (`junkit/scaffold` is the reusable rendering/Fx-registration
+engine; `cmd/scaffold/templates.go` holds this app's actual templates, matching `user`'s layer
+shape exactly):
+
+```bash
+make feature NAME=product              # or: TABLE=custom_table_name to override the default "products"
+make migrate-up                        # creates the generated table
+go build ./...
+```
+
+This creates:
+
+- a migration (up/down),
+- a `queries/product.sql` + hand-written `sqlc/product.sql.go` (same shape as `user.sql.go` —
+  replace with a real `sqlc generate` once you've refined the schema),
+- the full `domain/repository/service/dto/handler/router/module` layer set for a generic
+  `name + status` entity,
+
+then registers `product.Module` into `internal/app/fx.go` automatically. Adjust the generated
+columns/fields to fit your actual domain, same as you'd hand-edit anything else.
+
+`make feature-remove NAME=product` reverses everything *except* the migration files — dropping a
+table is destructive, so that step is left for you to confirm explicitly (`make migrate-down`,
+then delete the files).
+
+### Option B — copy `user` by hand
+
+When the generic template doesn't fit:
+
+1. Copy the `user` directory structure, renaming `user` → your feature name throughout.
+2. Add a migration: `make migrate-create NAME=add_<feature>_table`, then `make migrate-up`.
+3. Write the SQL in `internal/database/queries/<feature>.sql` (sqlc-annotated) and either hand-write
+   or `make sqlc` a `internal/database/sqlc/<feature>.sql.go`.
+4. Wire the feature's `Module` into `internal/app/fx.go` next to `user.Module`.
+5. If your routes need protecting, see below.
+
+### Protecting your routes
+
+Inject `middleware.Authenticator[*authdomain.Identity]` (provided by the auth module) into your
+router and apply `middleware.BearerAuth`, same as `user_router.go` does:
+
+```go
+// router: require a valid access token on every route in this group
+group.Use(middleware.BearerAuth(r.authenticator, r.responder, middleware.BearerAuthOptions{}))
+
+// handler: who is calling?
+identity := security.MustGetIdentity[*authdomain.Identity](c)
+```
+
+---
+
+## 14. Adding a new console command
+
+The console is an app-level mechanism (`internal/console`) — not to be confused with the
+`junkit/console` package, which is just the colored `Successf`/`Infof`/`Warnf`/`Fatalf` output
+helpers a command's `Run` prints through.
+
+### Quickest: generate it
+
+```bash
+make command NAME=health_check SIGNATURE=health:check           # global command
+make command NAME=list_users SIGNATURE=user:list FEATURE=user    # feature-scoped command
+```
+
+### By hand
+
+1. Write a type implementing `console.Command`:
+
+   ```go
+   // internal/console/command.go
+   type Command interface {
+   	Signature() string                        // CLI name, e.g. "user:list"
+   	Run(ctx context.Context, args []string) error
+   }
+   ```
+
+   - **Global** commands (not tied to any one feature, e.g. `health:check`) go under
+     `internal/console/commands/` — see
+     [`health_check_command.go`](internal/console/commands/health_check_command.go).
+   - **Feature-scoped** commands live inside the feature they operate on and share its services,
+     under `internal/features/<feature>/command/` — e.g. `user:list`
+     ([`list_users_command.go`](internal/features/user/command/list_users_command.go)) reuses the
+     same `domain.UserService` the HTTP handler calls.
+
+2. Give it a `namespace:verb` signature (e.g. `product:sync`) so it stays discoverable via the
+   no-argument command listing.
+3. Register it into the `"commands"` Fx group — in
+   [`internal/console/commands/module.go`](internal/console/commands/module.go) for a global
+   command, or in your feature's own `module.go` (next to its routes) for a feature-scoped one:
+
+   ```go
+   fx.Provide(
+   	fx.Annotate(
+   		NewListUsersCommand,
+   		fx.As(new(console.Command)),
+   		fx.ResultTags(`group:"commands"`),
+   	),
+   ),
+   ```
+
+4. Use `junkit/console`'s `Successf`/`Infof`/`Warnf`/`Fatalf` for terminal output inside `Run` —
+   see the [`console` example](#console).
+
+### How it's wired
+
+`app.NewConsoleFx()` (`internal/app/fx.go`) builds a separate Fx app that reuses `CoreModules`
+(the same DB/cache/services graph as the API) but swaps `HTTPModules` for:
+
+```go
+fx.Provide(console.Module),      // collects every Command into the "commands" Fx group
+fx.Invoke(console.RunSelected),  // registers the OnStart hook that dispatches os.Args[1]
+```
+
+`console.RunSelected` (`internal/console/kernel.go`) reads `os.Args[1]` as the command's
+signature, finds the matching `Command` among everything provided into the `"commands"` group,
+calls its `Run`, then shuts the Fx app down.
+
+---
+
+# Part III — `junkit` reference
+
+## 15. Core vs. optional packages
 
 `internal/app/fx.go` groups `junkit` packages into two tiers:
 
@@ -426,42 +742,10 @@ an enabled `tracer.Debugger` — so this is always safe to leave in place. The s
 
 ---
 
-## 6. Configuration
+## 16. Package tour
 
-All configuration is environment variables, parsed into `internal/config/config.go`'s `Config`
-struct via [`caarlos0/env`](https://github.com/caarlos0/env). Start from `.env.example` — it
-documents every variable inline. Highlights:
-
-| Variable | Purpose |
-|---|---|
-| `AUTH_*` | Login, tokens and brute-force limits — see [3 Authentication](#configuration) |
-| `TRACER_DEBUG_KEY` / `TRACER_DEBUG_VALUE` | Query-param name/value that unlocks the debug dashboard (2) |
-| `DB_*` | Postgres connection + pool tuning |
-| `CACHE_ENABLED` | `cache` package is a no-op unless this is `true` (and Redis is started with `WITH=cache`) |
-| `STORAGE_BASE_DIR` / `STORAGE_BASE_URL` | Where uploaded avatars are stored and served from |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Ops alerts for panics/rate-limit breaches; empty = safe no-op |
-| `RECAPTCHA_MOCK` | Verifier always succeeds when true (default outside production) |
-
-Three more variables aren't part of `Config` — they're read directly by
-`deploy/docker-compose.dev.yaml` / `docker-compose.yaml` to cap the `app` container's resources
-(both files fall back to sane defaults if unset, so you only need these to override):
-
-| Variable | Purpose | Dev default | Prod default |
-|---|---|---|---|
-| `APP_MEM_LIMIT` | Hard memory cap on the `app` container | `1024M` | `2048M` |
-| `APP_CPU_LIMIT` | Hard CPU cap on the `app` container | `1.0` | `2.0` |
-| `APP_GOMEMLIMIT` | Go's soft memory limit ([`GOMEMLIMIT`](https://pkg.go.dev/runtime#hdr-Environment_Variables)) — lets the GC back off before hitting the hard cap above instead of getting OOM-killed. Keep it ~90% of `APP_MEM_LIMIT` | `900MiB` | `1800MiB` |
-
-Lower-spec dev machines rarely need to touch these; raise them if the first build or hot-reload
-feels CPU/memory-starved.
-
----
-
-## 7. Package tour (`junkit`)
-
-Every package below is documented in full via GoDoc comments in its own source (`../junkit/<pkg>`)
-— this table is just an index. Run `go doc github.com/jungo-dev/junkit/<package>` from this
-directory (the `replace` directive in `go.mod` resolves it to the sibling module) for the full
+Every package below is documented in full via GoDoc comments in its own source — this table is
+just an index. Run `go doc github.com/jungo-dev/junkit/<package>` from this directory for the full
 API.
 
 | Package | Purpose |
@@ -481,7 +765,7 @@ API.
 | `recaptcha` | Google reCAPTCHA v3 verification, with a `Mock` verifier for local dev/tests |
 | `tracer` | Request-scoped debug logger — powers the `?t_debug=` dashboard (SQL, results, request/server info) |
 | `middleware` | Gin middleware: CORS, rate limiting, panic recovery, security headers, request tracing, body capture |
-| `scaffold` | Code-generation engine (name-form derivation, templated file writing, Fx registration) behind `cmd/scaffold` — see 9 |
+| `scaffold` | Code-generation engine (name-form derivation, templated file writing, Fx registration) behind `cmd/scaffold` — see [13](#13-adding-a-new-feature) |
 
 **Convention:** every package except `pagination`, `middleware`, and `scaffold` exposes a `var
 Module = fx.Module(...)` (or `fx.Provide(...)`) for one-line Fx registration — see how each is
@@ -493,17 +777,16 @@ something the running application imports at all.
 
 ---
 
-## 8. Usage examples
+## 17. Usage examples
 
 One example per package — either lifted directly from this codebase (file path given) or, for
-packages this skeleton doesn't call into anywhere, a minimal standalone snippet. Every package
-also has a full GoDoc comment in its own source; these examples are the "how do I actually call
-this" complement to that reference.
+packages this skeleton doesn't call into anywhere, a minimal standalone snippet. These examples
+are the "how do I actually call this" complement to the GoDoc reference.
 
 ### console
 
 Not wired through Fx — call directly from CLI-style code (migration runners, code generators,
-`main` bootstrap), never from request-handling code:
+`main` bootstrap, console commands), never from request-handling code:
 
 ```go
 console.Stepf("→", "applying migration %s", name)
@@ -695,8 +978,8 @@ development and tests never need a real Google token.
 
 ### tracer
 
-Powers the `?t_debug=` dashboard (2) — the `database.Options.Decorate` hook in
-`internal/app/fx.go` already captures every SQL query automatically. To add your own
+Powers the [`?t_debug=` dashboard](#7-live-debug-dashboard) — the `database.Options.Decorate`
+hook in `internal/app/fx.go` already captures every SQL query automatically. To add your own
 breakpoint-style annotations visible in that same dashboard, call the package-level helpers
 anywhere a `context.Context` (or `*gin.Context`) is available:
 
@@ -754,176 +1037,3 @@ r.Router.Use(
 Each constructor takes its own `Options` (no shared Fx module) so a route group needing a
 different rate limit can call `middleware.Limiter` again with different `LimiterOptions`, e.g.
 directly inside a feature's router.
-
----
-
-## 9. Anatomy of the sample feature (`user`)
-
-`internal/features/user` is the template to copy for a new feature. Each layer has one job and
-only depends on the layer below it:
-
-```
-internal/features/user/
-├── domain/           entity + interfaces (UserRepository, UserService) — no Gin, no sqlc, no Fx
-├── repository/       UserRepository impl — talks to Postgres via internal/database/sqlc
-├── service/          UserService impl — business logic (bcrypt hashing, avatar upload via storage)
-├── dto/v1/            request/response structs + converters to/from domain.User
-├── handler/v1/        thin HTTP layer: bind → call service → respond
-├── router/v1/          registers routes on a *gin.RouterGroup, applies middleware.BearerAuth
-└── module.go          fx.Module wiring the above together + registerTranslations
-```
-
-Routes are collected automatically: any type implementing `router.Routes` (optionally also
-`router.Versioned`) that's provided into the `"routes"` Fx group gets mounted by
-`router.RegisterAll` — `internal/router` never imports feature packages directly.
-
-### Adding a new feature
-
-Two ways to get a new feature scaffolded, from fastest to most hands-on:
-
-**Generate it** with `cmd/scaffold` — a code generator (`junkit/scaffold` is the reusable
-rendering/Fx-registration engine; `cmd/scaffold/templates.go` holds this app's actual templates,
-matching `user`'s layer shape exactly):
-
-```bash
-make feature NAME=product              # or: TABLE=custom_table_name to override the default "products"
-make migrate-up                        # creates the generated table
-go build ./...
-```
-
-This creates a migration (up/down), a `queries/product.sql` + hand-written
-`sqlc/product.sql.go` (same shape as `user.sql.go` — replace with a real `sqlc generate` once
-you've refined the schema), and the full `domain/repository/service/dto/handler/router/module`
-layer set for a generic `name + status` entity — then registers `product.Module` into
-`internal/app/fx.go` automatically. Adjust the generated columns/fields to fit your actual domain,
-same as you'd hand-edit anything else.
-
-`make feature-remove NAME=product` reverses everything *except* the migration files — dropping a
-table is destructive, so that step is left for you to confirm explicitly (`make migrate-down`,
-then delete the files).
-
-**Or copy `user` by hand**, when the generic template doesn't fit:
-
-1. Copy the `user` directory structure, renaming `user` → your feature name throughout.
-2. Add a migration: `make migrate-create NAME=add_<feature>_table`, then `make migrate-up`.
-3. Write the SQL in `internal/database/queries/<feature>.sql` (sqlc-annotated) and either hand-write
-   or `make sqlc` a `internal/database/sqlc/<feature>.sql.go`.
-4. Wire the feature's `Module` into `internal/app/fx.go` next to `user.Module`.
-5. If your routes need protecting, inject `middleware.Authenticator[*authdomain.Identity]` into
-   your router and apply `middleware.BearerAuth(authenticator, responder, middleware.BearerAuthOptions{})`,
-   same as `user_router.go` does. Read the caller with `security.MustGetIdentity[*authdomain.Identity](c)`.
-
-### Auth
-
-The `auth` feature (login, tokens, sessions) is documented in [3 Authentication](#3-authentication).
-
----
-
-## 10. Project layout
-
-```
-jungo/
-├── cmd/api/             entrypoint (main.go)
-├── internal/
-│   ├── app/             Fx composition root (fx.go, app.go)
-│   ├── common/          shared helpers for the whole project
-│   ├── config/          env-var → Config struct
-│   ├── router/          global middleware + route collection
-│   ├── database/        migrations, functions, seeders, sqlc queries + generated code
-│   └── features/        user (sample feature — see 9), auth (see 3)
-└── deploy/              Dockerfile, docker-compose (dev + prod)
-```
-
-The public [`junkit`](https://github.com/jungo-dev/junkit) module (a normal `go.mod`
-dependency, no local checkout needed) holds every infrastructure package listed in 7.
-
----
-
-## 11. Requirements
-
-See [0. Before you start](#0-before-you-start--required-tools) for install instructions (macOS +
-Windows) for everything below.
-
-- Docker + Docker Compose (recommended path — handles Postgres, hot reload, etc. for you)
-- Go **1.26.5**, only if running things outside Docker (`go build`, `go test`, etc.)
-- [`golang-migrate`](https://github.com/golang-migrate/migrate) CLI — `make migrate-*` always
-  shells out to it from your host
-- `psql` (PostgreSQL client) — `make migrate-up` / `make db-seed` use it to apply SQL functions
-  and seed data
-- [`sqlc`](https://sqlc.dev), only if regenerating `internal/database/sqlc` via `make sqlc`
-
----
-
-## 12. Console commands
-
-Besides the HTTP API, `cmd/console` is a second entrypoint for one-off CLI commands (health
-checks, data backfills, ad-hoc reports) that need the same Fx-wired dependencies (database, cache,
-services, ...) as the API server, without going through HTTP. This is an app-level mechanism
-(`internal/console`) — not to be confused with the `junkit/console` package (7), which is just the
-colored `Successf`/`Infof`/`Warnf`/`Fatalf` output helpers a command's `Run` prints through.
-
-```bash
-make console CMD="health:check"
-make console CMD="user:list"
-go run ./cmd/console health:check   # equivalent, run directly on the host
-```
-
-### How it's wired
-
-`app.NewConsoleFx()` (`internal/app/fx.go`) builds a separate Fx app that reuses `CoreModules`
-(the same DB/cache/services graph as the API) but swaps `HTTPModules` for:
-
-```go
-fx.Provide(console.Module),      // collects every Command into the "commands" Fx group
-fx.Invoke(console.RunSelected),  // registers the OnStart hook that dispatches os.Args[1]
-```
-
-`console.RunSelected` (`internal/console/kernel.go`) reads `os.Args[1]` as the command's
-signature, finds the matching `Command` among everything provided into the `"commands"` group,
-calls its `Run`, then shuts the Fx app down. Running with no arguments lists every registered
-signature.
-
-### The `Command` interface
-
-```go
-// internal/console/command.go
-type Command interface {
-	Signature() string                        // CLI name, e.g. "user:list"
-	Run(ctx context.Context, args []string) error
-}
-```
-
-### Two places to register a command
-
-- **Global** commands — not tied to any one feature, e.g. `health:check`
-  ([`internal/console/commands/health_check_command.go`](internal/console/commands/health_check_command.go))
-  — registered in [`internal/console/commands/module.go`](internal/console/commands/module.go), which is
-  included once in `CoreModules`.
-- **Feature-scoped** commands — live inside the feature they operate on and share its services, e.g.
-  `user:list` ([`internal/features/user/command/list_users_command.go`](internal/features/user/command/list_users_command.go))
-  reuses the same `domain.UserService` the HTTP handler calls. Registered directly in the feature's
-  own `module.go`, next to its routes/repository/service providers — see
-  [`internal/features/user/module.go`](internal/features/user/module.go).
-
-Both register into the same Fx group, just with an `fx.Annotate`:
-
-```go
-fx.Provide(
-	fx.Annotate(
-		NewListUsersCommand,
-		fx.As(new(console.Command)),
-		fx.ResultTags(`group:"commands"`),
-	),
-),
-```
-
-### Adding a new command
-
-1. Write a type implementing `console.Command` — global ones go under
-   `internal/console/commands/`, feature ones under `internal/features/<feature>/command/`.
-2. Give it a `namespace:verb` signature (e.g. `product:sync`) so `make console CMD=...` stays
-   discoverable via the no-argument command listing.
-3. Register it into the `"commands"` group — in `commands.Module` for a global command, or in your
-   feature's own `module.go` for a feature-scoped one (same pattern as its routes).
-4. Use `junkit/console`'s `Successf`/`Infof`/`Warnf`/`Fatalf` for terminal output inside `Run` —
-   see the `console` example in [8](#console).
